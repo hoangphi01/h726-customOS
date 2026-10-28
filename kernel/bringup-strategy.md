@@ -46,12 +46,13 @@ This sits **before** `ccu_probe`, before the clock tree, before anything our dri
 1. **Build the kernel 32-bit (`ARCH=arm`)** to match the vendor boot chain (an AArch32 -> AArch32 handoff, which already works on stock) and the 32-bit userspace. Cost: mainline defines the sun50i SoCs only under `arch/arm64`; a 32-bit sunxi base for this SoC (32-bit device tree + platform glue) would be new, pioneering work. The CCU and pinctrl drivers (sunxi-ng) build for both arches, so those port.
 2. **Keep arm64 and build an AArch64 boot chain** (boot0/SPL + TF-A + U-Boot that enter AArch64) to `booti` the arm64 kernel. Cost: the H726 BootROM-to-AArch64 entry must be solved first (the RVBAR hang found above), plus a sun50iw15 DRAM init (none in mainline) and a TF-A port. Cleaner long term, but the mode switch is an open blocker.
 
-Neither is clearly easier; each has one hard unknown (pioneer 32-bit sunxi for a new SoC, versus crack the AArch64 entry).
+### Decision: Branch 1 (32-bit `ARCH=arm`), validated at the build level
 
-### Two cheap probes to settle the fork (next, not this pass)
+Branch 1 is chosen. It matches the whole device (the vendor U-Boot, kernel and userspace all live in AArch32), bypasses gate #0 entirely (an AArch32 -> AArch32 handoff, which already works on stock), and avoids cracking the unsolved AArch64 entry with no UART and no BootROM docs.
 
-- Try an `ARCH=arm` build of the sun50iw15 base and measure how much 32-bit platform/DT scaffolding is really needed.
-- Reverse-engineer boot0 / the BootROM to find the correct H726 RVBAR address and the AArch64 entry sequence.
+The cheap probe confirmed the friction is near zero: on `ARCH=arm` (with `arm-linux-gnueabihf-`), the CCU driver, the pinctrl driver and the device tree compile **unchanged** (the sunxi-ng clock and pinctrl frameworks build natively on 32-bit ARM), and a full `multi_v7_defconfig` kernel with our drivers built in produces a **`zImage` (~11 MB)**. So all of Phase B2 ports straight over; only the cross-compiler and the build target change. `kernel/build.sh` now defaults to the 32-bit target (`TARGET=arm`, `zImage`); the 64-bit path stays as `TARGET=arm64`.
+
+What is validated is that the kernel *builds* in the right format. Whether the vendor U-Boot actually enters it, and how far it runs, is the next real test, via the GPIO heartbeat below.
 
 ## What unlocks everything: a UART console
 
@@ -59,8 +60,8 @@ A 3.3V USB-UART adapter (about 2-5 USD) on the board's debug pads gives log outp
 
 ## Order of attack
 
-1. Decide the fork (32-bit kernel, or crack the AArch64 entry) using the two cheap probes above.
-2. Get a near-empty kernel to run one GPIO heartbeat through the (matched) boot chain.
+1. ~~Decide the fork~~ Done: Branch 1 (32-bit `ARCH=arm`); the `zImage` builds with our drivers in.
+2. Get the kernel to run one GPIO heartbeat through the vendor boot chain: insert an early `writel` to a known-safe, visible pin (the fan enable or an LED) at the start of 32-bit execution, pack the `zImage` into `boot_a`, flash via PhoenixSuit, and watch. A reaction means gate #0 is passed. (This step needs the physical device.)
 3. Only then tune the CCU/pinctrl offsets (hardware-confirm the A523-hypothesis values in [../re/ccu-sun50iw15.md](../re/ccu-sun50iw15.md)).
 4. Bring up drivers in dependency order (see [../re/README.md](../re/README.md)).
 
