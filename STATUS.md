@@ -2,7 +2,7 @@
 
 Living status of the project. Updated as reality changes. See [PLAN.md](PLAN.md) for the roadmap.
 
-**Phase:** Phase 0 (recon) complete. Starting Track A (build a clean GSI) and Track B (hunt the kernel BSP) in parallel.
+**Phase:** Phase 0 (recon) complete. Track B mining started (DTB decompiled, driver surface classified). Track A (build a clean GSI) and Track B (independent BSP from the mine) run in parallel.
 **Last updated:** 2026-10-28.
 
 ## What is working
@@ -26,22 +26,49 @@ Run read-only on the rooted device plus web research.
 
 The effective device tree (`/proc/device-tree`) and the `dtbo_a` partition were pulled, and the kernel config (`/proc/config.gz`) was saved, to seed Track B. These are vendor binaries and are not committed here (see [RULE.md](RULE.md)).
 
+### Gold mine, first read of the device tree
+
+The extracted `system.dtb` (from `/sys/firmware/fdt`, valid FDT) was decompiled with `dtc` to a 3196-line `.dts`. This is the authoritative hardware map for Track B. First findings:
+
+- **DRAM:** base `0x40000000`; a `linux,cma` default pool is carved in `reserved-memory`.
+- **Panel is LVDS, not MIPI DSI (correction).** The active display is `lvds0@5800000` driving `panel0@0`, compatible `allwinner,z20hd720m`: a 4-lane LVDS 1280x720 imager (`hactive=0x500`, `vactive=0x2d0`, pixel clock about 61.8 MHz). A `dsi0@5506000` node exists but is not the panel in use. Earlier "720p MIPI DSI" was wrong; it is 720p LVDS.
+- **Display pipeline (the new work).** `vs-display` (compatible `vs,display`) is the large custom block: regions `soc`/`afbd`/`cap`/`svp`/`panel`, 9 interrupts (`cap`, `deint`, `meter`, `vnr`, `panel0/1`, `proc`, `scaler`, `afbd_dec`), 20 clocks. It is fed by `tvtop@6000000` (`allwinner,sunxi-tvtop`, the TV front-end / capture: demod, `tvfe`, `tvcap`, audio), `tvdisp@5500000` (`allwinner,tvdisp_top`), `tcon0@5501000`, `lvds0`, plus `vs-osd` (`vs,osd`) and a `vs,trid-audio-bridge`. These `vs,*` and `allwinner,sunxi-tvtop`/`tvdisp_top` nodes are the drivers with no mainline equivalent, so they are the real port/RE target.
+- **Hardware keystone.** `ksc@5900000`, compatible `allwinner,ksc100`, is a dedicated keystone-correction engine (reg `0x5900000`, its own clock and CMA range). The projector's keystone is hardware, not just app math; re-adding keystone on a clean build means driving this block.
+- **Video engine:** dual Cedar VE, `ve@1c0e000` (`allwinner,sunxi-cedar-ve` and `...-ve1`), under power domain `pd_ve`. Reuse the CedarX blobs over this.
+- **GPU:** `gpu@0x01800000` binds as `arm,mali-midgard` (under `pd_gpu`), not Bifrost. The userspace blob `libGLES_mali.so` remains authoritative for the GL version; the DT compatible just tells us which `kbase` variant the kernel used.
+- **IOMMU:** `allwinner,iommu-v14-sun50iw15` at `0x2010000`, with master ids wired to `vs-display`, `tvtop` and the VE.
+- **Clocks/pinctrl (reusable base):** `sun50iw15-ccu`, `-r-ccu`, `-rtc-ccu`, `-pll-dram`, `-cpupll`, `-pinctrl`, `-r-pinctrl`. These are standard sunxi CCU/pinctrl drivers to extend from the H713 base.
+- **Standard, reusable or near-mainline:** MMC (`sunxi-mmc-v4p6x`/`v5p3x`), USB (`ehci/ohci/udc/otg-manager`), GMAC + MDIO ethernet, TWI/`twi-v105`, SPI `v1.5`, UART `v100/v101`, PWM `v201` (0..13), THS thermal, GPADC, SID efuse, watchdog, RTC `v200`, DMA `v105`, CE crypto, hwspinlock, msgbox.
+- **Audio:** `sunxi-snd-codec` + `sunxi-snd-mach` with i2s / owa (SPDIF) / aaudio platforms; plus the `trid-audio-bridge` on the display side.
+- **PMIC:** `x-powers,axp1530` (pek + regulators `dcdc1-3`, `aldo1`, `dldo1`).
+- **Wi-Fi/BT:** `sunxi-wlan` + `sunxi-rfkill` + `sunxi-bt`/`btlpm` (AIC8800, the `rwnx` stack, relatively open).
+- **Projector sensors/actuators:** accelerometers `kxtj3`, `lsm6dsr`, `lsm6dsv`, `stk83xx` (auto-keystone tilt); `motor-control` (autofocus motor); `htc,pwm-fan` (cooling); `irrx` (IR remote); `gpio-keys`.
+- **Boot/firmware nodes:** `allwinner,box_start_os`, `allwinner,fastlogo` (the splash), `android,firmware` + `android,vbmeta` (AVB), `linaro,optee-tz` (OP-TEE secure world), `arm,psci-1.0`, `arm,gic-400`.
+
+#### Driver surface, classified for Track B
+
+| Class | Nodes | Plan |
+|---|---|---|
+| Reuse mainline / H713 almost as-is | CCU, pinctrl, MMC, USB, GMAC, TWI, SPI, UART, PWM, THS, GPADC, SID, watchdog, RTC, DMA, CE, GIC, PSCI, AXP1530 | Extend the sun50iw12 (H713) bring-up to sun50iw15 ids. |
+| Reuse with vendor blob | Mali (midgard kbase + `libGLES_mali.so`), Cedar VE (`sunxi-cedar-ve` + CedarX `.so`/firmware), AIC8800 Wi-Fi/BT (`rwnx` + firmware) | Port the open kernel glue, keep the closed userspace. |
+| New: write or RE from the vendor `.ko` | `vs,display`, `vs,osd`, `vs,trid-audio-bridge`, `allwinner,sunxi-tvtop`, `allwinner,tvdisp_top`, `tcon`, `lvds0`, `allwinner,z20hd720m` panel, `allwinner,ksc100` keystone | The genuine port target. RE with REA/Ghidra against the DTS reg/clock/irq map above. |
+
 ## Verdict
 
 - **Track A (clean userspace) is reachable:** build a 32-bit LineageOS 21 (arm) GSI from source, flash it to `system_a`, keep the vendor kernel, `/vendor` and `/product`. Clean userspace, vendor kernel.
-- **Track B (clean kernel) is blocked for now** by the missing `sun50iw15` BSP source. It becomes a parallel research track (find the Tina SDK, or assess porting sun50iw15 onto a generic AIoT 5.15 tree using the extracted config and DTB).
+- **Track B (clean kernel) is an independent BSP, not a blocked SDK hunt.** There is no public `sun50iw15` factory BSP and there does not need to be. The gold mine holds the full hardware spec: the DTS above is the authoritative map, `config.gz` is the defconfig base, and the vendor `.ko`/`.so` are the closed pieces to reuse or reverse. The work is to extend the H713 (`sun50iw12`) mainline bring-up to sun50iw15 for the standard blocks, and to write or RE the short list of genuinely new drivers (the `vs,*` display pipeline, `tvtop`/`tvdisp_top`, `tcon`/`lvds0`, the `z20hd720m` panel, the `ksc100` keystone). Real kernel bring-up, but bounded and seeded, exactly the linux-sunxi method.
 
-Both run in parallel: A delivers a usable clean-userspace build; B chases a trustworthy kernel.
+Both run in parallel: A delivers a usable clean-userspace build; B builds a trustworthy kernel from the mine.
 
 ## Device facts (confirmed)
 
 - SoC: Allwinner H726 = `sun50iw15p1`, FEL id `0x1911`, FEL USB `1f3a:efe8`, board codename `hermes`.
 - CPU: quad Cortex-A53 (ARMv8-A, run in 32-bit AArch32 mode). ABI: `armeabi-v7a` only.
-- RAM: about 1 GB (low-RAM). Panel: 720p (`1280x720`), MIPI DSI.
-- GPU: Mali-G31 (blob `libGLES_mali.so`, 32-bit).
+- RAM: about 1 GB (low-RAM). Panel: 720p (`1280x720`) LVDS imager `z20hd720m`, 4-lane (a `dsi0` node exists but is not the panel in use).
+- GPU: Mali (userspace blob `libGLES_mali.so`, 32-bit; the kernel DT binds it as `arm,mali-midgard`).
 - Wi-Fi/BT: AIC8800 (`aic8800_*` modules, `rwnx`); `ps_on=Y`.
 - Kernel: `5.15.167`, Allwinner AIoT BSP (AOSP flavor), 32-bit.
-- Display: DRM/KMS direct, no MIPS co-processor; sunxi `tvtop` / `ve` / `vs-display`.
+- Display: no MIPS co-processor; pipeline is `tvtop` (TV front-end/capture) + `tvdisp_top` + `tcon`/`lvds0` + `vs-display`/`vs-osd` + dual Cedar VE, through the sun50iw15 IOMMU. Hardware keystone via `ksc100`.
 - Partitions: A/B, dynamic `super`; `boot`, `init_boot`, `vendor_boot`, `dtbo`, `vbmeta` (+ system / vendor), reserve partition for calibration.
 - Rooted-build state: `verifiedbootstate=orange`, verity disabled, SELinux Permissive.
 
@@ -53,10 +80,11 @@ Both run in parallel: A delivers a usable clean-userspace build; B chases a trus
 - [ ] Flash test (keep the stock image for unbrick), verify hardware, write "What works / Bugs".
 - [ ] Re-add the keystone / autofocus stack and the defaults (Aurora, SmartTube, PhairPlay).
 
-**Track B, hunt the kernel BSP:**
-- [ ] Find the Allwinner Tina 5.0_AIOT / longan SDK for `sun50iw15`.
-- [ ] If not found, assess porting sun50iw15 onto a generic AIoT 5.15 tree using the extracted config and DTB.
-- [ ] Reverse-engineer the out-of-tree drivers (`tvtop`, `vs-display`, panel) as needed.
+**Track B, build the independent BSP from the mine:**
+- [x] `dtc` the extracted DTB to `.dts` (done; 3196 lines, driver surface classified above).
+- [ ] Obtain the H713 (`sun50iw12`) kernel tree (YuujiLab / probonopd) as the porting base; map our DTS and `config.gz` onto it.
+- [ ] Stage the vendor blobs and `.ko` (Mali, CedarX VE, AIC8800, `vs-display`) locally; split "reuse" from "reverse".
+- [ ] RE the out-of-tree drivers (`vs,display`/`vs,osd`, `tvtop`/`tvdisp_top`, `tcon`/`lvds0`, `z20hd720m`, `ksc100`) with REA/Ghidra against the DTS reg/clock/irq map.
 
 ## Bugs
 
