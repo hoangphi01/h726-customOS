@@ -122,6 +122,14 @@ So Track B's kernel base is mainline linux-sunxi plus whatever sun50iw12 (H713) 
 
 Both run in parallel: A delivers a usable clean-userspace build; B builds a trustworthy kernel from the mine.
 
+## Track A: blockers inherited (and not) from the H713 GSI attempt
+
+The H713 sibling already flashed a prebuilt PHH Treble ARM32 GSI and documented the failures ([GSI_DISCOVERIES.md](https://github.com/YuujiLab/HY300-H713-Research/blob/main/GSI/GSI_DISCOVERIES.md)). Checked which transfer to H726:
+
+- **`UDISK` data-label blocker: does NOT apply to H726.** On H713 the data partition is labelled `UDISK`, so GSI init crashed mounting `/data`. H726 labels it the standard `userdata` (`mmcblk0p29`, `metadata` at `p21`). One blocker gone for free.
+- **HWC frame-commit blocker: applies in principle.** H726's composer is the vendor `hwcomposer.hermes.so` behind `android.hardware.graphics.composer@2.2-service` (**HIDL composer 2.2**, old), with `gralloc.hermes.so`, `ro.hardware.egl=mali`, `ro.board.platform=hermes`, and a model config at `/vendor/etc/dispconfigs/default.json`. This is the same stack whose present/commit handshake timed out (`waitForCommitFinish: timeout`) against a generic SurfaceFlinger on H713, blanking the optical engine after `/data` mounts. A self-built Lineage 21 GSI keeps this vendor HWC, so the risk is concrete: a newer SF driving the quirky Allwinner HIDL@2.2 HWC. Mitigations to try first (cheap): native props already match (`egl=mali`, `gralloc=hermes`), force `wm size 1280x720`, set `device_provisioned=1` / `user_setup_complete=1`, and a VNDK shim if a vendor lib wants an older symbol. The clean fix is Track B's open DRM/KMS path (`vs-display`), which is exactly what the H713 write-up concludes is required for a stable GSI.
+- **Widevine: L3 only.** H726's `/vendor/lib/mediadrm` ships only `libdrmclearkeyplugin.so` (no `libwvdrmengine` in the 32-bit dir), and the family is documented L3 (software, HDCP unprotected). Premium HD/UHD streaming (Netflix, Disney+) will not work on any build here regardless of root or ROM; use an external stick on HDMI-in. Aurora, SmartTube and YouTube are unaffected. A product note, not a blocker.
+
 ## Device facts (confirmed)
 
 - SoC: Allwinner H726 = `sun50iw15p1`, FEL id `0x1911`, FEL USB `1f3a:efe8`, board codename `hermes`.
