@@ -1,0 +1,528 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * Device tree for the Magcubic / Gojodoq HY300 Ultra projector
+ * Allwinner H726 (sun50iw15p1), board codename "hermes".
+ *
+ * Reverse-engineered from the stock firmware's device tree (see ../re/)
+ * and written against mainline. Structure follows the H713 HY300 port
+ * (github.com/shift/sun50iw12p1-research) but the register map is the
+ * H726's own: the core controllers are relocated and are NOT H6, so the
+ * CCU and pinctrl carry sun50iw15 compatibles and need their own drivers
+ * (the #1 bring-up task, see kernel/README.md). Clock/reset indices are
+ * the vendor numbering, kept for when that CCU driver lands.
+ *
+ * This file is our own work; it contains no vendor binaries.
+ */
+
+/dts-v1/;
+
+/ {
+	model = "Magcubic HY300 Ultra Projector";
+	compatible = "magcubic,hy300ultra", "allwinner,sun50i-h726";
+
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	interrupt-parent = <&gic>;
+
+	aliases {
+		serial0 = &uart0;
+		mmc0 = &mmc2;
+	};
+
+	chosen {
+		stdout-path = "serial0:115200n8";
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu0: cpu@0 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			reg = <0>;
+			enable-method = "psci";
+			clocks = <&ccu 0>;
+			#cooling-cells = <2>;
+		};
+
+		cpu1: cpu@1 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			reg = <1>;
+			enable-method = "psci";
+			clocks = <&ccu 0>;
+			#cooling-cells = <2>;
+		};
+
+		cpu2: cpu@2 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			reg = <2>;
+			enable-method = "psci";
+			clocks = <&ccu 0>;
+			#cooling-cells = <2>;
+		};
+
+		cpu3: cpu@3 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			reg = <3>;
+			enable-method = "psci";
+			clocks = <&ccu 0>;
+			#cooling-cells = <2>;
+		};
+	};
+
+	osc24M: osc24M-clk {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <24000000>;
+		clock-output-names = "osc24M";
+	};
+
+	osc32k: osc32k-clk {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <32768>;
+		clock-output-names = "ext-osc32k";
+	};
+
+	psci {
+		compatible = "arm,psci-0.2";
+		method = "smc";
+	};
+
+	/* ~1 GB DRAM (DDR, base 0x40000000); U-Boot fixes up the real size. */
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x0 0x40000000 0x0 0x40000000>;
+	};
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		/* Default CMA pool (vendor DTS carves a linux,cma here). */
+		cma_pool: linux,cma {
+			compatible = "shared-dma-pool";
+			reusable;
+			size = <0x0 0x8000000>; /* 128 MB */
+			linux,cma-default;
+		};
+	};
+
+	gic: interrupt-controller@3400000 {
+		compatible = "arm,gic-400";
+		reg = <0x0 0x03401000 0x0 0x1000>,
+		      <0x0 0x03402000 0x0 0x2000>,
+		      <0x0 0x03404000 0x0 0x2000>,
+		      <0x0 0x03406000 0x0 0x2000>;
+		interrupts = <1 9 0xf04>;
+		interrupt-controller;
+		#interrupt-cells = <3>;
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		arm,no-tick-in-suspend;
+		interrupts = <1 13 0xf08>,
+			     <1 14 0xf08>,
+			     <1 11 0xf08>,
+			     <1 10 0xf08>;
+	};
+
+	soc: soc@0 {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0x0 0x0 0x0 0x40000000>;
+
+		/*
+		 * Clock/reset controllers. sun50iw15 is not H6: these need
+		 * their own drivers. Indices below (and on every clocks=/
+		 * resets= in this file) are the vendor numbering.
+		 */
+		cpupll_ccu: clock@2001000 {
+			compatible = "allwinner,sun50iw15-cpupll";
+			reg = <0x02001000 0x1000>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		ccu: clock@2002000 {
+			compatible = "allwinner,sun50iw15-ccu";
+			reg = <0x02002000 0x1000>;
+			clocks = <&osc24M>, <&osc32k>, <&cpupll_ccu 0>, <&rtc 2>;
+			clock-names = "hosc", "losc", "iosc", "rtc-iosc";
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		drampll_ccu: clock@4830000 {
+			compatible = "allwinner,sun50iw15-pll-dram";
+			reg = <0x04830000 0x1000>;
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		iommu: iommu@2010000 {
+			compatible = "allwinner,iommu-v14-sun50iw15";
+			reg = <0x02010000 0x1000>;
+			interrupts = <0 0x47 4>;
+			clocks = <&ccu 75>;
+			clock-names = "iommu";
+			#iommu-cells = <2>;
+		};
+
+		/*
+		 * Pin controller. sun50iw15 bank/mux layout, own driver needed.
+		 * Mux subnodes use the mainline pins/function style so they
+		 * compile and are ready for that driver.
+		 */
+		pio: pinctrl@2000000 {
+			compatible = "allwinner,sun50iw15-pinctrl";
+			reg = <0x02000000 0x800>;
+			interrupts = <0 0x33 4>, <0 0x35 4>, <0 0x36 4>;
+			clocks = <&ccu 5>, <&osc24M>, <&osc32k>;
+			clock-names = "apb", "hosc", "losc";
+			gpio-controller;
+			#gpio-cells = <3>;
+			interrupt-controller;
+			#interrupt-cells = <3>;
+
+			uart0_pins: uart0-pins {
+				pins = "PH0", "PH1";
+				function = "uart0";
+			};
+
+			mmc2_pins: mmc2-pins {
+				pins = "PC1", "PC4", "PC5", "PC6", "PC7",
+				       "PC8", "PC9", "PC10", "PC11", "PC12",
+				       "PC13", "PC14";
+				function = "mmc2";
+				drive-strength = <30>;
+				bias-pull-up;
+			};
+		};
+
+		watchdog@2051000 {
+			compatible = "allwinner,sun50iw15-wdt", "allwinner,sun6i-a31-wdt";
+			reg = <0x02051000 0x24>;
+			interrupts = <0 0x35 4>;
+			clocks = <&osc24M>;
+		};
+
+		uart0: serial@2600000 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x02600000 0x400>;
+			interrupts = <0 0 4>;
+			reg-shift = <2>;
+			reg-io-width = <4>;
+			clocks = <&ccu 90>;
+			resets = <&ccu 20>;
+			pinctrl-names = "default";
+			pinctrl-0 = <&uart0_pins>;
+			status = "okay";
+		};
+
+		uart1: serial@2600400 {
+			compatible = "snps,dw-apb-uart";
+			reg = <0x02600400 0x400>;
+			interrupts = <0 1 4>;
+			reg-shift = <2>;
+			reg-io-width = <4>;
+			clocks = <&ccu 89>;
+			resets = <&ccu 19>;
+			status = "disabled";
+		};
+
+		/* eMMC */
+		mmc2: mmc@4022000 {
+			compatible = "allwinner,sun50i-h6-emmc",
+				     "allwinner,sun50i-a64-emmc";
+			reg = <0x04022000 0x1000>;
+			interrupts = <0 0x29 4>;
+			clocks = <&ccu 19>, <&ccu 83>;
+			clock-names = "ahb", "mmc";
+			resets = <&ccu 14>;
+			reset-names = "ahb";
+			pinctrl-names = "default";
+			pinctrl-0 = <&mmc2_pins>;
+			max-frequency = <100000000>;
+			cap-mmc-highspeed;
+			mmc-ddr-1_8v;
+			mmc-hs200-1_8v;
+			non-removable;
+			bus-width = <8>;
+			status = "okay";
+		};
+
+		/* SD card slot */
+		mmc0: mmc@4020000 {
+			compatible = "allwinner,sun50i-h6-mmc",
+				     "allwinner,sun50i-a64-mmc";
+			reg = <0x04020000 0x1000>;
+			interrupts = <0 0x27 4>;
+			clocks = <&ccu 16>, <&ccu 81>;
+			clock-names = "ahb", "mmc";
+			resets = <&ccu 16>;
+			reset-names = "ahb";
+			max-frequency = <150000000>;
+			cap-sd-highspeed;
+			bus-width = <4>;
+			status = "disabled";
+		};
+
+		i2c0: i2c@7081400 {
+			compatible = "allwinner,sun50i-h6-i2c",
+				     "allwinner,sun6i-a31-i2c";
+			reg = <0x07081400 0x400>;
+			interrupts = <0 0x27 4>;
+			clocks = <&r_ccu 5>;
+			resets = <&r_ccu 2>;
+			status = "okay";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/* AXP1530 PMIC */
+			pmic@36 {
+				compatible = "x-powers,axp1530";
+				reg = <0x36>;
+				interrupt-controller;
+				#interrupt-cells = <1>;
+
+				regulators {
+					reg_dcdc1: dcdc1 {
+						regulator-name = "vdd-cpu";
+						regulator-min-microvolt = <500000>;
+						regulator-max-microvolt = <1400000>;
+						regulator-always-on;
+					};
+
+					reg_dcdc2: dcdc2 {
+						regulator-name = "vdd-core";
+						regulator-min-microvolt = <500000>;
+						regulator-max-microvolt = <1400000>;
+						regulator-always-on;
+					};
+
+					reg_dcdc3: dcdc3 {
+						regulator-name = "vdd-sys";
+						regulator-min-microvolt = <500000>;
+						regulator-max-microvolt = <1400000>;
+						regulator-always-on;
+					};
+				};
+			};
+		};
+
+		i2c1: i2c@7081800 {
+			compatible = "allwinner,sun50i-h6-i2c",
+				     "allwinner,sun6i-a31-i2c";
+			reg = <0x07081800 0x400>;
+			interrupts = <0 0x28 4>;
+			clocks = <&r_ccu 6>;
+			resets = <&r_ccu 3>;
+			status = "okay";
+			#address-cells = <1>;
+			#size-cells = <0>;
+
+			/* Tilt sensors for auto keystone (one is fitted). */
+			accel@e {
+				compatible = "kionix,kxtj3-1057";
+				reg = <0x0e>;
+				status = "disabled";
+			};
+
+			imu@6b {
+				compatible = "st,lsm6dsr";
+				reg = <0x6b>;
+				status = "disabled";
+			};
+		};
+
+		ths: thermal-sensor@7070400 {
+			compatible = "allwinner,sun50iw15-ths",
+				     "allwinner,sun50i-h6-ths";
+			reg = <0x07070400 0x400>;
+			clocks = <&r_ccu 0x17>, <&r_ccu 0x15>;
+			clock-names = "bus", "gpadc";
+			resets = <&r_ccu 0x0a>;
+			#thermal-sensor-cells = <1>;
+		};
+
+		sid: efuse@3006000 {
+			compatible = "allwinner,sun50i-h6-sid";
+			reg = <0x03006000 0x400>;
+		};
+
+		pwm: pwm@2000c00 {
+			compatible = "allwinner,sun50i-h6-pwm";
+			reg = <0x02000c00 0x400>;
+			clocks = <&osc24M>, <&ccu 13>;
+			clock-names = "mod", "bus";
+			resets = <&ccu 7>;
+			#pwm-cells = <3>;
+			status = "okay";
+		};
+
+		gmac: ethernet@4500000 {
+			compatible = "allwinner,sun50i-h6-emac",
+				     "allwinner,sun50i-a64-emac";
+			reg = <0x04500000 0x10000>;
+			interrupts = <0 0x10 4>;
+			interrupt-names = "macirq";
+			clocks = <&ccu 103>;
+			clock-names = "stmmaceth";
+			resets = <&ccu 29>;
+			reset-names = "stmmaceth";
+			status = "disabled";
+		};
+
+		gpu: gpu@1800000 {
+			compatible = "allwinner,sun50i-h726-mali",
+				     "arm,mali-midgard";
+			reg = <0x01800000 0x10000>;
+			interrupts = <0 117 4>, <0 118 4>, <0 76 4>;
+			interrupt-names = "job", "mmu", "gpu";
+			clocks = <&ccu 8>, <&ccu 9>;
+			clock-names = "core", "bus";
+			status = "okay";
+		};
+
+		ve: video-codec@1c0e000 {
+			compatible = "allwinner,sun50i-h6-video-engine";
+			reg = <0x01c0e000 0x2000>;
+			clocks = <&ccu 33>, <&ccu 32>, <&ccu 53>;
+			clock-names = "ahb", "mod", "ram";
+			resets = <&ccu 7>;
+			interrupts = <0 89 4>;
+			status = "disabled";
+		};
+
+		rtc: rtc@7090000 {
+			compatible = "allwinner,sun50i-h6-rtc";
+			reg = <0x07090000 0x400>;
+			interrupts = <0 101 4>, <0 102 4>;
+			clock-output-names = "osc32k", "osc32k-out", "iosc";
+			clocks = <&osc32k>;
+			#clock-cells = <1>;
+		};
+
+		r_ccu: clock@7010000 {
+			compatible = "allwinner,sun50iw15-r-ccu";
+			reg = <0x07010000 0x250>;
+			clocks = <&osc24M>, <&osc32k>, <&rtc 2>, <&ccu 17>;
+			clock-names = "hosc", "losc", "iosc", "pll-periph";
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		r_pio: pinctrl@7022000 {
+			compatible = "allwinner,sun50iw15-r-pinctrl";
+			reg = <0x07022000 0x400>;
+			clocks = <&r_ccu 16>, <&osc24M>, <&osc32k>;
+			clock-names = "apb", "hosc", "losc";
+			gpio-controller;
+			#gpio-cells = <3>;
+			interrupt-controller;
+			#interrupt-cells = <3>;
+
+			ir_rx_pin: ir-rx-pin {
+				pins = "PL9";
+				function = "s_cir_rx";
+			};
+		};
+
+		/*
+		 * Display pipeline. These are the H726's own blocks, reverse
+		 * engineered in ../re/ (tvtop, tvpanel/tcon/lvds, vs-display,
+		 * ksc keystone). The drivers are Phase B4; the nodes are here
+		 * so the hardware map is complete and the DTB is faithful.
+		 */
+		tvtop: tvtop@6000000 {
+			compatible = "allwinner,sun50iw15-tvtop", "allwinner,sunxi-tvtop";
+			reg = <0x06000000 0x100>, <0x06e00000 0x100>;
+			interrupts = <0 0x52 4>;
+			clocks = <&ccu 139>;
+			status = "disabled";
+		};
+
+		tvdisp: tvdisp@5500000 {
+			compatible = "allwinner,sun50iw15-tvdisp-top";
+			reg = <0x05500000 0x1000>;
+			status = "disabled";
+		};
+
+		tcon0: tcon@5501000 {
+			compatible = "allwinner,sun50iw15-tcon";
+			reg = <0x05501000 0x1000>;
+			status = "disabled";
+		};
+
+		lvds0: lvds@5800000 {
+			compatible = "allwinner,sun50iw15-lvds";
+			reg = <0x05800000 0x100000>;
+			interrupts = <0 0x6a 4>;
+			status = "disabled";
+
+			panel {
+				compatible = "allwinner,z20hd720m";
+				/* 1280x720 4-lane LVDS imager, ~61.8 MHz pixel clock */
+				width-mm = <0>;
+				height-mm = <0>;
+
+				panel-timing {
+					clock-frequency = <61840000>;
+					hactive = <1280>;
+					hfront-porch = <20>;
+					hback-porch = <40>;
+					hsync-len = <20>;
+					vactive = <720>;
+					vfront-porch = <18>;
+					vback-porch = <20>;
+					vsync-len = <2>;
+				};
+			};
+		};
+
+		ksc: ksc@5900000 {
+			compatible = "allwinner,ksc100";
+			reg = <0x05900000 0x100000>;
+			interrupts = <0 0x69 4>;
+			clocks = <&ccu 145>;
+			status = "disabled";
+		};
+
+		vs_display: vs-display {
+			compatible = "vs,display";
+			reg = <0x06e00000 0x1000>,
+			      <0x05600000 0x1000>,
+			      <0x06800000 0x1c1000>,
+			      <0x05000000 0x341000>,
+			      <0x05800000 0x100000>;
+			reg-names = "soc", "afbd", "cap", "svp", "panel";
+			iommus = <&iommu 2 0>;
+			status = "disabled";
+		};
+	};
+
+	ir-receiver {
+		compatible = "gpio-ir-receiver";
+		gpios = <&r_pio 0 9 1>; /* PL9, active low */
+		pinctrl-names = "default";
+		pinctrl-0 = <&ir_rx_pin>;
+	};
+
+	fan: pwm-fan {
+		compatible = "pwm-fan";
+		pwms = <&pwm 0 50000 0>;
+		cooling-min-state = <0>;
+		cooling-max-state = <255>;
+		#cooling-cells = <2>;
+		status = "disabled";
+	};
+};
