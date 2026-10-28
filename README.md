@@ -49,7 +49,7 @@ Track B (a from-source kernel) is the primary focus; Track A (a LineageOS GSI) i
 | B1 | Reverse-engineer the display + keystone drivers into register maps ([re/](re/)) | Done, 9 notes |
 | B2 | Buildable kernel base: board device tree, `defconfig`, build scripts, and real sun50iw15 **CCU + pinctrl** drivers ([kernel/](kernel/)) | Done, compiles into the kernel |
 | Gate #0 | Boot handoff: the stock chain is AArch32, so the kernel is built **32-bit** (`ARCH=arm`) to match it; confirmed by a GPIO heartbeat in the `zImage` running on the device ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | **PASSED** - U-Boot enters our 32-bit kernel |
-| B3 | Boot further, blind: walk the kernel to init with a ladder of GPIO **checkpoint beacons** and an authoritative appended device tree, then fix the CCU/pinctrl offsets wherever a beacon stalls ([kernel/heartbeat.md](kernel/heartbeat.md)) | Build A built, compiles clean; next = flash + read beacons |
+| B3 | Boot past the vendor **watchdog** (an external ~2 s reset, now diagnosed as the sun55i-A523 key-protected watchdog), then walk the kernel to init with GPIO fan beacons and fix the CCU/pinctrl offsets ([re/bringup-signals.md](re/bringup-signals.md)) | Gate #0 passed; ~2 s watchdog diagnosed; next = disarm it with the `0x16aa` key |
 | B4 | Driver bring-up loop (display, keystone, Wi-Fi) from the B1 maps | Not started |
 | Track A | LineageOS GSI (deferred fallback) | Not started |
 
@@ -118,9 +118,17 @@ Everything compiles and builds; nothing boots yet (see below).
 - **[re/](re/)** the reverse-engineering notes (one per driver, plus the clock tree).
 - **[kernel/](kernel/)** the buildable artifacts, [the build + SoC facts](kernel/README.md), [the bring-up strategy](kernel/bringup-strategy.md), and [the checkpoint beacons](kernel/heartbeat.md).
 
-## 10. Built on prior work
+## 10. Built on prior work, and gratitude
 
-The root, the reverse-engineering (keystone / display subsystem, the `add_sum` IMAGEWTY method), the debloat and BadBox teardown, and the post-root pipeline live in the sibling repository **[hoangphi01/hy300ultra-h726-allinone](https://github.com/hoangphi01/hy300ultra-h726-allinone)**. The mainline porting method is anchored on **[shift/sun50iw12p1-research](https://github.com/shift/sun50iw12p1-research)** (the H713 sibling). This repository builds the OS on those foundations.
+The root, the reverse-engineering (keystone / display subsystem, the `add_sum` IMAGEWTY method), the debloat and BadBox teardown, and the post-root pipeline live in the sibling repository **[hoangphi01/hy300ultra-h726-allinone](https://github.com/hoangphi01/hy300ultra-h726-allinone)**. This repository builds the OS on that foundation.
+
+**The H726 (sun50iw15) is one SoC step from the H713 (sun50iw12), so this port stands on the shoulders of the H713 HY300 community.** With real gratitude:
+
+- **[well0nez/allwinner-h713-linux](https://github.com/well0nez/allwinner-h713-linux)** (on the base of **[cstenger/allwinner-h713-mainline](https://github.com/cstenger/allwinner-h713-mainline)**) - the one that *actually boots mainline Linux daily* on the H713, with a full open boot chain (SPL + TF-A + U-Boot) and a working driver stack (Panfrost, Cedrus, AIC8800, keystone). Their careful reverse-engineering - above all of the **sun55i-A523 key-protected watchdog** - is precisely what let us diagnose our own hardest boot blocker. This project is the lodestar and the inspiration; much of our road ahead is to adapt their H713 work to the H726.
+- **[srgneisner/hy300-linux-porting](https://github.com/srgneisner/hy300-linux-porting)** - a hardware-first effort whose live vendor device-tree dump is ground truth for our UART and watchdog nodes.
+- **[shift/sun50iw12p1-research](https://github.com/shift/sun50iw12p1-research)** - the original H713 research and the `sunxi-fel` SoC-table pattern we will follow for `0x1911`.
+
+Standing on this prior art is the whole linux-sunxi way: nobody gets the factory BSP, so each new sibling SoC reaches mainline on the generosity of the one before it. Thank you.
 
 ## 11. Disclaimer
 
@@ -166,7 +174,7 @@ Track B (kernel từ source) là trọng tâm; Track A (LineageOS GSI) là fallb
 | B1 | Dịch ngược driver display + keystone thành register map ([re/](re/)) | Xong, 9 note |
 | B2 | Nền kernel build-được: device tree, `defconfig`, build script, và driver **CCU + pinctrl** sun50iw15 thật ([kernel/](kernel/)) | Xong, compile vào kernel |
 | Gate #0 | Handoff boot: chuỗi stock là AArch32, nên build kernel **32-bit** (`ARCH=arm`) cho khớp; đã xác nhận bằng heartbeat GPIO trong `zImage` chạy trên máy ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | **ĐÃ QUA** - U-Boot vào kernel 32-bit của ta |
-| B3 | Boot xa hơn, mù: đưa kernel tới init bằng thang **checkpoint beacon** GPIO + device tree ghép-đuôi làm chủ, rồi chỉnh offset CCU/pinctrl ở chỗ beacon tắc ([kernel/heartbeat.md](kernel/heartbeat.md)) | Build A đã dựng, compile sạch; kế = flash + đọc beacon |
+| B3 | Vượt **watchdog** vendor (cú reset ngoài ~2s, nay đã chẩn đoán = watchdog layout A523 có key), rồi đưa kernel tới init bằng beacon quạt + chỉnh offset CCU/pinctrl ([re/bringup-signals.md](re/bringup-signals.md)) | Gate #0 qua; watchdog ~2s đã chẩn đoán; kế = tắt nó bằng key `0x16aa` |
 | B4 | Vòng bring-up driver (display, keystone, Wi-Fi) từ map B1 | Chưa bắt đầu |
 | Track A | LineageOS GSI (fallback hoãn) | Chưa bắt đầu |
 
@@ -235,9 +243,17 @@ Tất cả compile + build được; chưa boot (xem dưới).
 - **[re/](re/)** các note dịch ngược (mỗi driver một note, kèm cây clock).
 - **[kernel/](kernel/)** artifact build-được, [build + fact SoC](kernel/README.md), [chiến lược bring-up](kernel/bringup-strategy.md), [checkpoint beacon](kernel/heartbeat.md).
 
-## 10. Dựa trên việc đã làm
+## 10. Dựa trên việc đã làm, và lời tri ân
 
-Root, phần reverse-engineering (keystone / display, phương pháp `add_sum` cho IMAGEWTY), debloat + dọn BadBox, cùng pipeline hậu-root nằm ở repo chị em **[hoangphi01/hy300ultra-h726-allinone](https://github.com/hoangphi01/hy300ultra-h726-allinone)**. Phương pháp port mainline neo vào **[shift/sun50iw12p1-research](https://github.com/shift/sun50iw12p1-research)** (sibling H713). Repo này dựng OS trên nền đó.
+Root, phần reverse-engineering (keystone / display, phương pháp `add_sum` cho IMAGEWTY), debloat + dọn BadBox, cùng pipeline hậu-root nằm ở repo chị em **[hoangphi01/hy300ultra-h726-allinone](https://github.com/hoangphi01/hy300ultra-h726-allinone)**. Repo này dựng OS trên nền đó.
+
+**H726 (sun50iw15) chỉ cách H713 (sun50iw12) một bước SoC, nên bản port này đứng trên vai cộng đồng H713 HY300.** Xin tri ân:
+
+- **[well0nez/allwinner-h713-linux](https://github.com/well0nez/allwinner-h713-linux)** (trên nền **[cstenger/allwinner-h713-mainline](https://github.com/cstenger/allwinner-h713-mainline)**) — người *thực sự boot được mainline Linux hàng ngày* trên H713, với chuỗi boot mở đầy đủ (SPL + TF-A + U-Boot) và stack driver chạy (Panfrost, Cedrus, AIC8800, keystone). Phần dịch ngược tỉ mỉ của họ — nhất là **watchdog layout A523 có key** — chính là thứ giúp mình chẩn đoán đúng nút thắt boot khó nhất. Đây là ngọn hải đăng và nguồn cảm hứng; phần lớn chặng đường tới là đem việc H713 của họ sang H726.
+- **[srgneisner/hy300-linux-porting](https://github.com/srgneisner/hy300-linux-porting)** — hướng hardware-first, bản dump device-tree vendor của họ là ground truth cho node UART + watchdog của mình.
+- **[shift/sun50iw12p1-research](https://github.com/shift/sun50iw12p1-research)** — nghiên cứu H713 gốc + mẫu bảng SoC `sunxi-fel` mà mình sẽ theo cho `0x1911`.
+
+Đứng trên nền tiền nhân chính là tinh thần linux-sunxi: không ai có BSP gốc của hãng, nên mỗi SoC anh em tới được mainline đều nhờ lòng hào phóng của người đi trước. Cảm ơn.
 
 ## 11. Miễn trừ
 
