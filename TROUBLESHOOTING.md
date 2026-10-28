@@ -15,9 +15,12 @@ Real failures hit on this device, and exactly how to get out of them. Read the t
 1. Do not keep power-cycling hoping for an A/B fallback: the active slot is usually already marked "successful" from normal use, so the bootloader keeps retrying it and does not switch to the other slot.
 2. Enter FEL with the **paperclip FLASH button next to HDMI**: hold it, apply power, keep holding ~3-5 s. Watch the PC for `1f3a:efe8` (a new USB device). In FEL the kernel does not run, so the fan is safe.
 3. In PhoenixSuit V1.19, select the known-good image (`HY300Ultra_H726_ROOTED_v2.img`), click **Upgrade**, confirm **"Do Mandatory Upgrade?"** with **OK**, then **unplug/replug the USB cable** to make the device enumerate - PhoenixSuit catches FEL at that moment and flashes. (Skip the "hold a key, press power 10x" box; that is for tablets. The device is already in FEL.)
-4. It boots back to rooted Android. `/data` and the per-unit calibration are preserved (see below), so customizations survive.
+4. It boots back to rooted Android (Magisk **core** runs; the Magisk app and su policy may need re-doing, and your `su` over adb will not work until you set Superuser = "Apps and ADB" + grant Shell in the app). The per-unit calibration (Reserve0) is preserved.
 
-Alternative recovery, if the device did boot to a working Android: `dd` the stock `boot_a` backup straight back (`dd if=boot_a_backup.img of=/dev/block/by-name/boot_a`). Always back up `boot_a` before flashing a test kernel.
+> [!CAUTION]
+> **A PhoenixSuit recovery flash WIPES `/data` (factory reset).** Even though `userdata` is not in `dlinfo`, the flash rewrites `vbmeta`/`super` to stock, so the AVB/encryption state no longer matches the old encrypted `/data` and Android **force-formats it** on the next boot. Measured: after a v2 recovery flash, all pushed files under `/data/local/tmp` and all user apps (launcher, SmartTube, Aurora, the Hub, Magisk app) were gone. So any PhoenixSuit recovery costs your customizations; only the calibration survives.
+>
+> **To keep `/data`, do not get into a state that needs a PhoenixSuit flash.** The only way to replace just `boot_a` without a full flash is `dd` on a *running* Android (`dd if=boot_a_backup.img of=/dev/block/by-name/boot_a`) - which a hung kernel denies you. So: keep a bootable fallback alive (the other A/B slot, or a UART so you never have to blind-flash), always back up `boot_a` first, and treat a kernel that can hang as "this may cost /data."
 
 ## PhoenixSuit rejects the image: "Please ensure the firmware file is valid"
 
@@ -25,7 +28,7 @@ Allwinner IMAGEWTY images carry a per-partition **verify file** `V<name>.fex` (1
 
 - The accepted edit is **minimal diff**: copy the base image whole, overwrite only the one payload at its exact offset and the same size, recompute only that payload's `V` file, and **never touch `dlinfo`, `sys_partition` or the header**.
 - **Rewriting `dlinfo` (the "surgical" single-partition trick) is rejected.** Do not do it; a full flash is safe anyway.
-- A full flash does not wipe `/data` (`userdata` is not in `dlinfo`) and skips the `Reserve0` calibration partition, so customizations and per-unit calibration survive.
+- A full flash skips the `Reserve0` calibration partition (it survives). But although `userdata` is not in `dlinfo`, a full flash still rewrites `vbmeta`/`super`, which force-formats `/data` on the next boot (see the recovery caution above). So a full flash does **not** preserve your customizations - only the calibration.
 - Simplest of all: on a rooted device, skip IMAGEWTY entirely and **`dd` the partition** - raw bytes, no verify files, only that partition touched.
 
 ## Flashing on this SoC (`0x1911` / sun50iw15)
