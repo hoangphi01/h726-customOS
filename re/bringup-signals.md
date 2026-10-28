@@ -95,17 +95,36 @@ Live-testing a bring-up kernel exposed two power-management facts that dominate 
   light engine off, so a hung bring-up kernel cannot overheat the panel, and recovery is just a
   power-cycle (see the A/B loop below). The vendor fan GPIO (PL7) is still ours to toggle while the
   device is on - the MCU does not fight it.
-- **Something resets/stops the SoC ~1-2 s after our kernel starts.** A fan beacon confirmed the
-  kernel runs (one clear fan event = CP1 in the decompressor executed, so **gate #0 passes on the
-  appended-DTB build too**), but then the device goes to standby almost immediately - we never get
-  more than about one beacon cycle. Prime suspect: the vendor U-Boot leaves a **watchdog** running
-  (sun6i-a31 watchdog at `0x02051000`) that a bring-up kernel does not service, so it resets at its
-  short timeout; the MCU then sees the SoC reset and latches to standby. **Caution:** a direct
-  `writel` to the watchdog MODE register from the kernel made things *worse* (no beacon at all),
-  which suggests the watchdog may be **secure-world / OP-TEE owned** (a normal-world write aborts) or
-  needs the key field - do not blindly poke it. Confirming and extending this window is the current
-  blocker; until it is solved, any beacon has only ~1-2 s to produce its signal, so the signal must
-  be a single clear event early (the fan audibly stopping), not a long count.
+- **Something resets the SoC ~1-2 s after our kernel starts.** A fan beacon confirmed the kernel runs
+  (one clear fan event = CP1 in the decompressor executed, so **gate #0 passes**), but the device goes
+  to standby almost immediately - never more than ~one beacon cycle.
+
+### DIAGNOSED: the watchdog (sun55i-A523 key-protected layout) - from the H713 sibling
+
+The sibling H713 (sun50iw12) project **`well0nez/allwinner-h713-linux`** (mainline Linux boots daily on
+it; `docs/hardware.md`, `tfa-h713/`) hit this exact bug and documented the cause. The H713/H726
+watchdog is the **sun55i-A523 "key-protected" layout, NOT the old sun6i/H6 layout**, and there are
+**three watchdogs** (H726 vendor DTS confirms the first two):
+
+- main `watchdog@2051000` (wdt0, `okay`) - base `0x02051000`
+- `watchdog@2051400` (wdt1, disabled) - base `0x02051400`
+- **`R_WDOG` at `0x07020400`** - in the secure RTC/R (ARISC) domain, armed by the OR1K ARISC
+  co-processor, **survives resets and re-arms**, and nobody feeds it in a bare kernel -> the likely
+  persistent killer.
+
+Register file (per base): **CTRL `+0x0c`** (feed/reload = write `0x14af`), **CFG `+0x10`**,
+**MODE `+0x14`** (bit 0 = enable, bits [7:4] = interval, code 0 = 0.5 s). **Every CFG/MODE write is a
+silent no-op unless bits [31:16] carry the key `0x16aa`** - so writes must be `0x16aa0000 | value`.
+
+**This is exactly why our one attempt to disable it made things worse, not better:** we wrote
+`writel(0, 0x02051018)` - the *sun6i* MODE offset `+0x18` (the A523 MODE is `+0x14`) and with **no
+`0x16aa` key** - a silent no-op that also cost us the beacon. To actually disarm each watchdog:
+`writel(0x14af, base+0x0c)` (feed first - a MODE write into a running WDT does not restart its count),
+then `writel(0x16aa0000, base+0x14)` (MODE, enable bit clear), then **read MODE back and confirm bit 0
+is 0**. Do this for all three bases as the earliest thing the kernel does. The secure R_WDOG may refuse
+a normal-world disable if OP-TEE/ARISC owns it, in which case we feed it periodically or move to an
+open BL31 (as well0nez did). Full plan and sources: see the project's next-session plan and
+`well0nez/allwinner-h713-linux`.
 
 **Signal shape that works in a short window:** turn the fan fully OFF for ~1 s then ON for ~2 s,
 repeated. The fan audibly stopping is unmistakable even over itself, and starting with OFF puts the
@@ -134,12 +153,34 @@ to run ~15 s - it was **reset-looping** (boot_a is always bootable, so U-Boot ke
 MCU saw the SoC "active", and the fan toggled each loop until the panel overheated), whereas a
 one-shot `boot_b` kernel resets once, exhausts its try, and the MCU then drops to standby.
 
-**So the #1 blocker is the watchdog, and it must be handled correctly:** a plain `writel(0, MODE)` from
-the kernel made things *worse* (no beacon at all), so it is likely **secure-world / OP-TEE owned or
-key-protected**. The next move is to find the sun50iw15/sun55i watchdog's real register map + key and
-either disable it from the earliest asm or, if it is secure, **pet it** periodically (write the
-restart/key register) to keep the SoC alive past 2 s - or learn the vendor U-Boot handoff that stops
-it. This is the gate before any further bring-up progress can be observed.
+**So the #1 blocker is the watchdog** - now diagnosed precisely (the sun55i-A523 key-protected layout,
+three watchdogs incl. a secure R_WDOG, key `0x16aa`): see the "DIAGNOSED" subsection above and the
+sibling-project references below. The next move is to disarm all three with the keyed sequence as the
+kernel's earliest action.
+
+## Sibling H713 projects (the references that cracked this)
+
+- **`well0nez/allwinner-h713-linux`** (+ base `cstenger/allwinner-h713-mainline`) - mainline Linux 6.18
+  **boots and is daily-usable** on the H713 (sun50iw12, one SoC step from our H726/sun50iw15). THE
+  reference: `docs/hardware.md` (watchdog map + key), `docs/architecture.md` (the 3 processors: A53 x4,
+  MIPS display, OR1K ARISC + boot order), `tfa-h713/` (BL31 disarming the R_WDOG with read-back),
+  `mainline/patches/kernel/0186,0187` (watchdog DT binding, A523 layout), `tools/uart-*.py`.
+- **`srgneisner/hy300-linux-porting`** - a hardware-first rebuild with a live vendor-DTS dump (ground
+  truth); not booted yet (blocked awaiting a CP2102 UART adapter). Value: the vendor DTS confirms our
+  UART and watchdog nodes.
+- **`shift/sun50iw12p1-research`** - mostly AI-generated, never booted; trust only its sunxi-fel 0x1860
+  patch (`sunxi-tools-h713-support.patch`) as a template for adding our 0x1911.
+
+### Two facts from the vendor DTS worth having
+
+- **UART console is PH0 (TX) / PH1 (RX)**, 3.3V, 115200 8N1 (matches our DT). An alternate UART0 mux
+  routes it to the **microSD-slot pins PF2/PF4** (JTAG on PF0/PF1/PF3/PF5) - a possible **no-solder**
+  tap. A UART would let `uart-reset-catch.py` capture the ~2 s-before-reset log and name the exact
+  watchdog/stage. This is the real accelerator.
+- **Reading a co-processor-owned register from the A53 hangs/resets the SoC with no fault** (ARISC or
+  MIPS-display addresses). This is almost certainly why reading `/sys/class/prj/*` rebooted the device
+  (Signal 2 above) - it is not just a fragile driver, it is a cross-domain bus hang. Be careful with
+  any address in the `0x070x_xxxx` (R/ARISC) and display blocks.
 
 ### Speaker beep (PA-enable toggle): does NOT work
 

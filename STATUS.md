@@ -170,13 +170,16 @@ The H713 sibling already flashed a prebuilt PHH Treble ARM32 GSI and documented 
   back to stock `boot_a` - no FEL, no `/data` wipe). Confirmed: **gate #0 passes** and **`boot_b` runs our
   kernel** (a fan stutter was heard - U-Boot never toggles the fan - and `misc` slot_b tries decremented 1->0,
   so the slot is not locked). An **external ~2 s cutoff** then resets the SoC to standby, independent of the
-  appended DTB (a plain-zImage build behaves identically). **Leading hypothesis (not yet proven): the
-  watchdog** - the clean spin test to prove external-vs-crash accidentally used the *silent* beep, so it must be
-  re-run with the audible fan blip (`H726_SPINTEST`) next session. A direct `writel` to disable the watchdog
-  made things worse (no beacon at all) - likely secure/OP-TEE-owned or key-protected. A speaker-beep via the
-  PA-enable GPIO was tried and is **silent**. **Next session's #1 task: handle the watchdog** (correct sun50iw15 register map +
-  key, or pet it from early asm, or find the U-Boot handoff) so the kernel runs past 2 s and can be observed;
-  then fix CCU/pinctrl offsets. Full detail in [re/bringup-signals.md](re/bringup-signals.md). A UART console
+  appended DTB (a plain-zImage build behaves identically). **DIAGNOSED (from the sibling H713 project
+  `well0nez/allwinner-h713-linux`): the watchdog.** It is the **sun55i-A523 key-protected layout** (not
+  sun6i/H6): MODE at `+0x14`, CTRL at `+0x0c` (feed `0x14af`), and every CFG/MODE write is a silent no-op
+  without the key `0x16aa` in bits [31:16]; there are **three** watchdogs (`0x02051000`, `0x02051400`, and a
+  secure ARISC `R_WDOG` at `0x07020400` that survives resets). Our one disable attempt failed for a precise
+  reason - we wrote `0` to the *sun6i* MODE offset `0x02051018` with no key, a no-op. **Next session's #1 task:
+  disarm all three with the keyed sequence** (feed `CTRL=0x14af`, then `MODE=0x16aa0000`, read back) as the
+  kernel's earliest action, then the fan beacon should run past 2 s. A speaker-beep via the PA-enable GPIO was
+  tried and is **silent**. Full detail + the sibling-project references in
+  [re/bringup-signals.md](re/bringup-signals.md). UART (pads PH0/PH1, or no-solder on the SD-slot PF2/PF4)
   remains the real accelerator.
 - [ ] Phase B4: driver bring-up loop by dependency order (see [re/README.md](re/README.md)), reusing the Mali / CedarX / AIC8800 blobs.
 
