@@ -1,0 +1,19 @@
+# No proprietary firmware, blobs, or third-party APKs in the repo (see RULE.md).
+*.img
+*.fex
+*.bin
+*.apk
+*.so
+*.ko
+*.dtb
+*.rar
+*.zip
+super.*
+boot*.img
+init_boot*.img
+vendor*.img
+# Build and tool noise
+build/
+out/
+.gradle/
+*.log
