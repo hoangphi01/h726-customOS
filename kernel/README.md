@@ -11,37 +11,24 @@ This directory holds **our deltas** for building a clean, from-source kernel for
 
 The H713 port and ours share the boring half and differ on the half that matters:
 
-- **Reused from the H713 approach:** the H6-compatible CCU and pinctrl binding, the DRAM-from-boot0 method, the U-Boot "H6 base", Panfrost for the Mali-Midgard GPU, and the mainline peripheral drivers (MMC, USB, I2C, SPI, GMAC/`dwmac-sun8i`, PWM, thermal, crypto).
+- **Reused from the H713 approach:** the overall mainline-port method, the DRAM-from-boot0 idea, the U-Boot "H6 base", Panfrost for the Mali-Midgard GPU, and the mainline peripheral drivers (MMC, USB, I2C, SPI, GMAC/`dwmac-sun8i`, PWM, thermal, crypto). Note the H713 could reuse the H6 CCU/pinctrl; sun50iw15 cannot (it is the A523 generation), so we wrote our own, which is the main extra work.
 - **Not shared, the display:** the H713 HY300 drives its display through a **MIPS co-processor** (`sunxi-mipsloader` + `display.bin`); shift leaves TCON/LVDS/DSI/DE "not started". Our **H726 has no display co-processor** (the device tree has no MIPS/remoteproc node and no loader module); the display is direct hardware, already reverse-engineered in [../re/](../re/). So our display bring-up is our own work from the B1 register maps, not inherited, and we drop the MIPS pieces.
 
-## Build host (no Nix required)
+## Build (no Nix required)
 
-shift's `flake.nix` only provides a dev shell (an aarch64 cross toolchain, `dtc`, `sunxi-tools`, `bison`/`flex`/`bc`/`openssl`); it does not pin the kernel source (plain mainline is downloaded and configured by script). So the same build works with an ordinary toolchain:
-
-- WSL Ubuntu, `gcc-aarch64-linux-gnu`, `device-tree-compiler`, `bc bison flex libssl-dev`, `u-boot-tools`, `sunxi-tools`.
-- `ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-`.
-
-## Build recipe (verified)
-
-Toolchain and base confirmed working end to end, no Nix:
+`build.sh` is self-contained: it installs an ordinary cross toolchain on WSL Ubuntu, fetches mainline 6.16.7, drops in our device tree + CCU/pinctrl drivers, configures, and builds. The default target is **32-bit** (`TARGET=arm`, `zImage`), to match the vendor AArch32 boot chain; `TARGET=arm64` builds the reference `Image`.
 
 ```sh
-# toolchain (WSL Ubuntu)
-sudo apt-get install -y gcc-aarch64-linux-gnu build-essential \
-    device-tree-compiler bc bison flex libssl-dev u-boot-tools libncurses-dev
-
-# mainline base (matches the anchor's 6.16.7)
-wget https://cdn.kernel.org/pub/linux/kernel/v6.x/linux-6.16.7.tar.xz
-tar xf linux-6.16.7.tar.xz && cd linux-6.16.7
-export ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
-make defconfig            # generic arm64, includes CONFIG_ARCH_SUNXI
-make allwinner/<board>.dtb
+HEARTBEAT=1 bash build.sh      # 32-bit zImage with the gate-#0 heartbeat
+bash build.sh                  # 32-bit zImage
+TARGET=arm64 bash build.sh     # 64-bit Image (reference; not bootable by the vendor chain)
 ```
 
-Our own build, verified end to end: `bash build.sh` fetches mainline 6.16.7, drops in `sun50i-h726-hy300ultra.dts`, applies `configure-h726.sh`, and builds both artifacts.
+Verified end to end:
 
-- `sun50i-h726-hy300ultra.dtb`: **9276 bytes**, compiles with no errors or warnings.
-- `arch/arm64/boot/Image`: **~41 MB**, built from `h726_defconfig` (our config deltas confirmed present).
+- `sun50i-h726-hy300ultra.dtb`: **9276 bytes**, compiles with no errors or warnings (both arches).
+- `arch/arm/boot/zImage`: **~11 MB**, with our CCU + pinctrl drivers built in (and the heartbeat with `HEARTBEAT=1`).
+- `arch/arm64/boot/Image`: **~41 MB** via `TARGET=arm64`, kept for reference.
 
 ## sun50iw15 is not H6 (the key finding)
 
@@ -58,13 +45,13 @@ Unlike the H713, which the anchor could treat as H6-compatible, the H726's core 
 | IOMMU | `0x30f0000` | `0x2010000` |
 | eMMC / SID / R_CCU / R_PIO | same | `0x4022000` / `0x3006000` / `0x7010000` / `0x7022000` (match) |
 
-So the device tree names the controllers as `allwinner,sun50iw15-ccu` / `-pinctrl` / `-r-ccu` and the clock/reset indices follow the vendor numbering. The genuinely new kernel work is therefore a **sun50iw15 CCU and pinctrl driver** (the vendor has these; mainline does not), which is the gate to booting.
+So the device tree names the controllers as `allwinner,sun50iw15-ccu` / `-pinctrl` / `-r-ccu`. The genuinely new kernel work is a **sun50iw15 CCU and pinctrl driver**, which mainline does not have. These are now written (`ccu/ccu-sun50iw15.c`, `pinctrl/pinctrl-sun50iw15.c`, modelled on the sun55i A523 generation from the live clock tree in [../re/ccu-sun50iw15.md](../re/ccu-sun50iw15.md)) and compile into the kernel; their register offsets are an A523 hypothesis to be hardware-confirmed.
 
 ## Status
 
-Phase B2 is producing real, buildable artifacts (DTS + defconfig + CCU/pinctrl drivers + build scripts, all verified to compile/build). The honest limit is bigger than the CCU: see **[bringup-strategy.md](bringup-strategy.md)**.
+Phase B2 is done (DTS + defconfig + CCU/pinctrl drivers + build scripts, all verified to compile into the kernel), and the boot path (gate #0) is decided. The full reasoning is in **[bringup-strategy.md](bringup-strategy.md)**.
 
-Before the CCU offsets matter there is **gate #0, the boot handoff**: the stock kernel is AArch32 (verified by inspecting `boot_a`), the whole vendor stack runs the Cortex-A53 in 32-bit mode, and entering AArch64 on this SoC is unsolved (`sunxi-fel` reports `0x1911` unknown, `sunxi-fel uboot` fails `Unexpected SCTLR`, the RVBAR warm-reset to AArch64 hangs). So the **arm64** `Image` built here cannot be entered by the vendor boot chain yet. The next decision is the fork in [bringup-strategy.md](bringup-strategy.md): build the kernel 32-bit (`ARCH=arm`) to match the boot chain, or build an AArch64 boot chain. Blind bring-up then uses a GPIO heartbeat (the `sunxi-fel` RAM-load loop is not available on 0x1911; the loader is PhoenixSuit over FEL). A UART console is the real unlock. See [../STATUS.md](../STATUS.md).
+**Gate #0, the boot handoff, is decided: build 32-bit.** The stock kernel is AArch32 (verified by inspecting `boot_a`), the whole vendor stack runs the Cortex-A53 in 32-bit mode, and entering AArch64 on this SoC is unsolved (`sunxi-fel` reports `0x1911` unknown, `sunxi-fel uboot` fails `Unexpected SCTLR`, the RVBAR warm-reset to AArch64 hangs). So the kernel is built **32-bit (`ARCH=arm`)** to match the vendor chain (Branch 1); `build.sh` defaults to this. The `zImage` builds with our drivers in, and a gate-#0 GPIO heartbeat (red LED) is built into it ([heartbeat.md](heartbeat.md)) to confirm, on the device, that the vendor U-Boot enters our kernel. The loader is PhoenixSuit over FEL (`sunxi-fel` is unsupported on `0x1911`); a UART console is the real unlock. See [../STATUS.md](../STATUS.md).
 
 ## Planned contents
 

@@ -7,7 +7,13 @@ Living status of the project. Updated as reality changes. See [PLAN.md](PLAN.md)
 
 ## What is working
 
-Nothing is built yet. Phase 0 recon is done and the path is decided (below). The groundwork from the sibling repo still holds.
+Built and verified (compile/build level; nothing boots yet, see gate #0 in the Phase line):
+
+- **Reverse-engineering (B1):** 9 register-map notes in [re/](re/) covering the whole display + keystone stack (`ksc`, `tvtop`, `vs-display`, `vs-osd`, `tvpanel` = TCON/LVDS/DSI/DE, panels, `sunxi-ve`) plus the live-read clock tree ([re/ccu-sun50iw15.md](re/ccu-sun50iw15.md)).
+- **Kernel base (B2):** [kernel/](kernel/) has our board device tree, `h726_defconfig`, a self-contained `build.sh`, and real sun50iw15 **CCU + pinctrl drivers** (sunxi-ng, A523-generation). Verified: they compile into both a 32-bit `zImage` (~11 MB) and a 64-bit `Image` (~41 MB), and the DTB builds (9276 bytes).
+- **Boot path (gate #0 / B3):** the kernel is built 32-bit (`ARCH=arm`) to match the vendor AArch32 chain, and a gate-#0 **GPIO heartbeat** (red LED x5) is `#include`d into the decompressor and compiles into the `zImage` ([kernel/heartbeat.md](kernel/heartbeat.md)). Ready to flash and observe on the device.
+
+Not booting yet: the CCU register offsets are an A523 hypothesis, and gate #0 (does the vendor U-Boot enter our kernel) is unconfirmed until the heartbeat is flashed. The Phase-0 recon below is historical background.
 
 ## Phase 0 recon: results
 
@@ -145,13 +151,12 @@ The H713 sibling already flashed a prebuilt PHH Treble ARM32 GSI and documented 
 ## Next
 
 **Track B (primary), build the independent BSP from the mine:**
-- [x] `dtc` the extracted DTB to `.dts` (done; 3196 lines, driver surface classified above).
-- [x] Pull the H713/H310 anchors (YuujiLab / probonopd): confirmed research + tooling, not kernel trees. Kernel base is mainline linux-sunxi + any upstream sun50iw12 bring-up, guided by our DTS/config.
-- [x] Stage the new-driver `.ko` locally and split "reuse" from "reverse" (65 second-stage `.ko` in `/vendor` + `/vendor_dlkm`; the first-stage display stack from the `vendor_boot` ramdisk); build string pinned.
-- [x] **Phase B1 done: deep-RE the new drivers** into `re/` register maps (see [re/README.md](re/README.md)). Mapped: `sunxi_ksc` (LUT warp register file), `sunxi_tvtop` (clocks/resets/ADC/gates), `vs-display` (five register windows, conduit model), `vs-osd` (fbdev + CRTC/plane), `tvpanel` (the DE top + TCON + LVDS + DSI, all in one module with the routing/mux + PLL register map), the LVDS panel glue, and `sunxi-ve` (Cedar conduit, reuse the CedarX blobs). Key result from [re/kallsyms-map.md](re/kallsyms-map.md): the kernel is not stripped and every vendor display driver is a module, so no `vmlinux` extraction was needed; the only built-in display piece is the CCU clock tree (a B2 item). Method: ARM objdump anchored on the DTS reg bases (Ghidra 12.2 set up but rejects the available JDK; revisit for the userspace pixel math).
-- [ ] Phase B2: buildable kernel base (mainline linux-sunxi, defconfig from `config.gz`, DTS to source, sun50iw15 CCU/pinctrl/DRAM from sun50iw12).
-- [ ] Phase B3: boot.img + the no-serial debug harness (pstore/ramoops, USB dmesg dump, GPIO heartbeat); flash to `boot_a`, keep stock to unbrick.
-- [ ] Phase B4: driver bring-up loop by dependency order, reusing the Mali / CedarX / AIC8800 blobs.
+- [x] **Phase B1: deep-RE the new drivers** into `re/` register maps (see [re/README.md](re/README.md)) and read the clock tree live. The kernel is not stripped and every vendor display driver is a module, so no `vmlinux` RE was needed.
+- [x] **Phase B2: a buildable kernel base.** Board DTS, `h726_defconfig`, `build.sh`, and real sun50iw15 CCU + pinctrl drivers (sunxi-ng, A523-generation, from the live clock tree in [re/ccu-sun50iw15.md](re/ccu-sun50iw15.md)). All compile into the kernel.
+- [x] **Gate #0 decided: build 32-bit (`ARCH=arm`).** The stock kernel is AArch32 and entering AArch64 on this SoC is unsolved, so an arm64 Image cannot be entered by the vendor chain. The 32-bit `zImage` builds with our drivers in; see [kernel/bringup-strategy.md](kernel/bringup-strategy.md).
+- [ ] **Phase B3 (current): confirm gate #0.** A GPIO heartbeat (red LED x5) is built into the `zImage` ([kernel/heartbeat.md](kernel/heartbeat.md)); pack it into `boot_a`, flash via PhoenixSuit over FEL (keep stock to unbrick), and watch the LED. **Needs the physical device.**
+- [ ] Phase B3b: once gate #0 is confirmed, hardware-correct the CCU/pinctrl register offsets (A523-hypothesis today), using the blind-debug toolbox or, ideally, a UART console.
+- [ ] Phase B4: driver bring-up loop by dependency order (see [re/README.md](re/README.md)), reusing the Mali / CedarX / AIC8800 blobs.
 
 **Track A (deferred fallback), build the clean userspace:**
 - [ ] Set up a Lineage 21 build host (external drive, WSL Ubuntu, `repo` and deps).

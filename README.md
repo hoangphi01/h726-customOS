@@ -8,8 +8,8 @@
 
 ![SoC](https://img.shields.io/badge/SoC-Allwinner%20H726%20(sun50iw15)-blue)
 ![FEL ID](https://img.shields.io/badge/FEL%20ID-0x1911-informational)
-![Android](https://img.shields.io/badge/base-Android%2014-green)
-![Status](https://img.shields.io/badge/status-kernel%20bring--up%20(B2)-orange)
+![Kernel](https://img.shields.io/badge/kernel-mainline%206.16%20(arm)-green)
+![Status](https://img.shields.io/badge/status-kernel%20bring--up%20(B3)-orange)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Affiliation](https://img.shields.io/badge/affiliation-none-lightgrey)
 
@@ -19,60 +19,100 @@
 
 ## 1. What this is
 
-An effort to build a clean custom OS for the Magcubic / Gojodoq **HY300 Ultra** projector, powered by the **Allwinner H726 (`sun50iw15p1`, FEL id `0x1911`)**: Android 14, kernel 5.15, 32-bit `armeabi-v7a`, about 1 GB RAM, Mali-G31, AIC8800 Wi-Fi, 720p, DRM/KMS display with no MIPS co-processor.
+An effort to build a clean, from-source operating system for the Magcubic / Gojodoq **HY300 Ultra** projector, powered by the **Allwinner H726 (`sun50iw15p1`)**. The stock firmware is a white-label clone carrying the BadBox malware family on top of a heavy vendor Android framework; this project replaces it with a mainline Linux kernel built from scratch for the SoC, reverse-engineered from the device itself.
 
-The stock firmware is a white-label clone carrying the BadBox malware family and a heavy vendor framework. This project replaces its userspace, and if feasible its kernel, with a clean build.
+The current focus is **Track B, a trustworthy from-source kernel**. Everything needed to port it was mined out of the running device (device tree, clock tree, the driver register maps), because there is no public Allwinner BSP for this SoC, which is normal: the linux-sunxi community always mines rather than waiting for a factory SDK.
 
-## Progress
+## 2. Hardware overview
 
-Where this is, most recent first. Track B (a from-source kernel) is the primary focus; Track A (a LineageOS GSI) is a deferred fallback. Full detail in [STATUS.md](STATUS.md).
+| | |
+|---|---|
+| **SoC** | Allwinner H726 = `sun50iw15p1`, quad Cortex-A53, FEL id `0x1911`, board codename `hermes` |
+| **Clock/pin generation** | sun55i (A523) class: `pll-peri0/1` multi-output, `smhc` MMC, per-peripheral `sw-cfg-bus` gates (not H6) |
+| **Execution state** | AArch32: the vendor runs the 64-bit-capable A53 in 32-bit mode, so the clean kernel is built 32-bit to match |
+| **RAM** | ~1 GB (low-RAM) |
+| **Display** | 720p (1280x720) 4-lane **LVDS** imager (`z20hd720m`), no MIPS co-processor, **hardware keystone** (`ksc100`) |
+| **GPU** | Mali (Midgard-class), driven by Panfrost upstream |
+| **Video** | dual Cedar VE (CedarX blobs) |
+| **Wi-Fi / BT** | AIC8800 (`rwnx`) |
+| **Storage** | eMMC, A/B dynamic `super` |
+| **Recovery** | FEL (BootROM), flashed via PhoenixSuit; stock IMAGEWTY reflashes safely, reserve/calibration partition is skipped |
+| **Stock** | Android 14, Allwinner 5.15 BSP kernel (32-bit), BadBox clone |
+
+## 3. Progress
+
+Track B (a from-source kernel) is the primary focus; Track A (a LineageOS GSI) is a deferred fallback. Full detail in [STATUS.md](STATUS.md).
 
 | Phase | What | State |
 |---|---|---|
 | Phase 0 | Recon: Treble confirmed, device facts, the two-track verdict | Done |
-| B1 | Reverse-engineer the display and keystone drivers into register maps ([re/](re/)) | Done, 8 notes |
-| B2 | A buildable kernel base: board device tree, `defconfig`, build script; builds mainline 6.16.7 into a kernel `Image` + DTB ([kernel/](kernel/)) | Done, compiles and builds |
-| B2 | sun50iw15 CCU + pinctrl drivers | In progress, core subset compiles |
-| Gate #0 | Boot handoff: stock is AArch32, so the kernel is built 32-bit (`ARCH=arm`) to match the vendor chain ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | Decided; `zImage` builds |
-| B3 | Boot bring-up: a gate-#0 GPIO heartbeat (red LED x5) is built into the `zImage` ([kernel/heartbeat.md](kernel/heartbeat.md)); flash via PhoenixSuit to test | Ready to flash on the device |
+| B1 | Reverse-engineer the display + keystone drivers into register maps ([re/](re/)) | Done, 9 notes |
+| B2 | Buildable kernel base: board device tree, `defconfig`, build scripts, and real sun50iw15 **CCU + pinctrl** drivers ([kernel/](kernel/)) | Done, compiles into the kernel |
+| Gate #0 | Boot handoff: the stock chain is AArch32, so the kernel is built **32-bit** (`ARCH=arm`) to match it ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | Decided; `zImage` builds |
+| B3 | Confirm gate #0: a GPIO heartbeat (red LED x5) is built into the `zImage` ([kernel/heartbeat.md](kernel/heartbeat.md)); flash via PhoenixSuit and watch | Ready to flash on the device |
+| B4 | Driver bring-up loop (display, keystone, Wi-Fi) from the B1 maps | Not started |
 | Track A | LineageOS GSI (deferred fallback) | Not started |
 
-**Builds today:** the device tree, the config, and our sun50iw15 CCU and pinctrl drivers, all into a mainline 6.16.7 kernel `Image` via `kernel/build.sh`. **Not working yet:** booting, which needs the CCU/pinctrl register offsets confirmed on hardware and, ideally, a serial console. The reverse-engineering groundwork (the display/keystone register maps) is what makes the driver work possible.
+## 4. Why
 
-## 2. Why
+- **Smooth on 1 GB.** The stock vendor framework is bloated; a lean kernel and userspace are the only way this device runs well on 1 GB.
+- **Trustworthy.** The stock userspace carries BadBox (fake Play Store, setuid backdoor, telemetry) and the vendor kernel is an unaudited binary. The goal is a clean, auditable, from-source system.
+- **Projector-first.** Keep the reverse-engineered keystone and autofocus working; drop everything else.
 
-- **Smooth on 1 GB.** The stock vendor framework is bloated; a lean userspace is the only way this device runs well on 1 GB RAM.
-- **Trustworthy.** The stock userspace carries BadBox (fake Play Store, setuid backdoor, telemetry), and the vendor kernel is an unaudited binary. The goal is a clean, auditable system.
-- **Projector-first.** Keep the reverse-engineered keystone and autofocus stack working; drop everything else.
+## 5. Approach (two tracks)
 
-## 3. Goals
+- **Track B, from-source kernel (primary):** mainline Linux 6.16 for the SoC, with device tree, CCU, pinctrl and the display/keystone drivers written from the reverse-engineering in [re/](re/); the closed userspace pieces (Mali, CedarX, AIC8800 firmware) are reused as blobs. This is on the critical path because even a GSI needs an open display driver to be stable.
+- **Track A, LineageOS GSI (deferred fallback):** a clean Lineage userspace on the vendor kernel via Treble. Needs no UART and gives a usable device sooner, but inherits the vendor HWC quirk until Track B's display driver lands.
 
-- **Lean:** fits and runs well on 1 GB (low-RAM config, tuned zram).
-- **Clean userspace:** LineageOS, not MagcubicOS / BigDroid.
-- **Trustworthy:** strip BadBox; aim for a from-source kernel.
-- **Projector features preserved:** the reverse-engineered keystone / autofocus / projection-mode logic.
-- **Sensible defaults:** Aurora Store as the store, SmartTube bundled, PhairPlay integrated as the default cast receiver.
+The roadmap is in [PLAN.md](PLAN.md); the boot/debug strategy in [kernel/bringup-strategy.md](kernel/bringup-strategy.md).
 
-## 4. Approach (two tiers)
+## 6. Build
 
-- **Tier A, LineageOS GSI over Treble:** a clean Lineage userspace running on the vendor kernel and `/vendor` blobs via Project Treble. No blob extraction or kernel building; the hardware keeps working while the vendor framework is replaced. The projector apps are re-added on top.
-- **Tier B, from-source port:** a device tree, a kernel rebuilt from the Allwinner BSP plus the extracted DTB and config, blobs assembled into `/vendor`, and targeted reverse-engineering of the few out-of-tree drivers. A clean, auditable kernel.
+No Nix required; the script installs an ordinary cross toolchain on Ubuntu / WSL.
 
-The full roadmap is in [PLAN.md](PLAN.md).
+```sh
+# 32-bit kernel (default), with the gate-#0 GPIO heartbeat built in:
+HEARTBEAT=1 bash kernel/build.sh
+# -> arch/arm/boot/zImage  +  sun50i-h726-hy300ultra.dtb
 
-## 5. Built on prior work
+# plain build, or the 64-bit reference Image:
+bash kernel/build.sh
+TARGET=arm64 bash kernel/build.sh
+```
 
-The root, the reverse-engineering (keystone / display subsystem, the `add_sum` IMAGEWTY method), the debloat and BadBox teardown, and the post-root pipeline live in the sibling repository **[hoangphi01/hy300ultra-h726-allinone](https://github.com/hoangphi01/hy300ultra-h726-allinone)**. This repository builds the OS on that foundation.
+See [kernel/README.md](kernel/README.md) for the details and the SoC-vs-H6 facts.
 
-## 6. Docs
+## 7. Build artifacts
 
-- **[PLAN.md](PLAN.md)** the roadmap, phases, and open questions.
-- **[RULE.md](RULE.md)** how this project is run and written.
-- **[STATUS.md](STATUS.md)** where we are, what works, what is untested.
+- `zImage` (32-bit ARM, ~11 MB) with our CCU + pinctrl drivers and device tree built in; optionally the heartbeat.
+- `sun50i-h726-hy300ultra.dtb` (~9 KB).
+- a 64-bit `Image` (~41 MB) via `TARGET=arm64`, kept for reference (not bootable by the vendor chain, see gate #0).
 
-## 7. Disclaimer
+Everything compiles and builds; nothing boots yet (see below).
 
-Experimental. Flashing an Allwinner device can permanently brick it. For the **H726 (`sun50iw15` / `0x1911`)** only. No proprietary firmware, vendor blobs, or third-party APKs are redistributed here; sources are linked. Not affiliated with Allwinner, Magcubic, Gojodoq or Google.
+## 8. Known challenges
+
+- **Gate #0, the boot handoff.** The stock kernel is AArch32 and entering AArch64 on this SoC is unsolved, so we build 32-bit. Confirmed at the build level; unconfirmed on hardware until the heartbeat is flashed.
+- **CCU / pinctrl register offsets.** Modelled on the A523 generation and the live clock tree; the offsets are a hypothesis until a boot (ideally a UART console) confirms them.
+- **No UART yet.** Bring-up is blind: a GPIO heartbeat and pstore stand in for serial. `sunxi-fel` does not support `0x1911`, so the loader is PhoenixSuit over FEL. A 3.3V USB-UART adapter is the single biggest accelerator.
+- **The display stack.** `vs-display`, `tvtop`, the keystone and the panel are the real remaining driver work; they are reverse-engineered in [re/](re/) but not yet written as mainline drivers.
+
+## 9. Documentation
+
+- **[STATUS.md](STATUS.md)** the living current state (what works, what is next).
+- **[PLAN.md](PLAN.md)** the roadmap, tracks and phases.
+- **[RULE.md](RULE.md)** how the project is run and written.
+- **[DOCS_GUIDE.md](DOCS_GUIDE.md)** the documentation index and update discipline.
+- **[re/](re/)** the reverse-engineering notes (one per driver, plus the clock tree).
+- **[kernel/](kernel/)** the buildable artifacts, [the build + SoC facts](kernel/README.md), [the bring-up strategy](kernel/bringup-strategy.md), and [the heartbeat](kernel/heartbeat.md).
+
+## 10. Built on prior work
+
+The root, the reverse-engineering (keystone / display subsystem, the `add_sum` IMAGEWTY method), the debloat and BadBox teardown, and the post-root pipeline live in the sibling repository **[hoangphi01/hy300ultra-h726-allinone](https://github.com/hoangphi01/hy300ultra-h726-allinone)**. The mainline porting method is anchored on **[shift/sun50iw12p1-research](https://github.com/shift/sun50iw12p1-research)** (the H713 sibling). This repository builds the OS on those foundations.
+
+## 11. Disclaimer
+
+Experimental. Flashing an Allwinner device can permanently brick it (though FEL + the stock image make recovery reliable here). For the **H726 (`sun50iw15` / `0x1911`)** only. No proprietary firmware, vendor blobs, or third-party APKs are redistributed here; sources are linked. Not affiliated with Allwinner, Magcubic, Gojodoq or Google.
 
 ---
 
@@ -84,57 +124,97 @@ Experimental. Flashing an Allwinner device can permanently brick it. For the **H
 
 ## 1. Đây là gì
 
-Dự án dựng một **custom OS sạch** cho máy chiếu **HY300 Ultra** (Magcubic / Gojodoq) chạy **Allwinner H726 (`sun50iw15p1`, FEL `0x1911`)**: Android 14, kernel 5.15, 32-bit `armeabi-v7a`, khoảng 1 GB RAM, Mali-G31, Wi-Fi AIC8800, 720p, hiển thị DRM/KMS không có co-processor MIPS.
+Dự án dựng một **hệ điều hành sạch, build từ source** cho máy chiếu **HY300 Ultra** (Magcubic / Gojodoq) chạy **Allwinner H726 (`sun50iw15p1`)**. Firmware gốc là bản clone white-label dính họ malware BadBox trên nền framework Android hãng nặng nề; dự án thay nó bằng một kernel Linux mainline dựng từ đầu cho SoC, dịch ngược từ chính máy.
 
-Firmware gốc là bản clone white-label dính họ malware BadBox và framework hãng nặng nề. Dự án này thay userspace, và nếu khả thi là cả kernel, bằng một bản build sạch.
+Trọng tâm hiện tại là **Track B, kernel sạch từ source**. Mọi thứ cần để port đều được đào ra từ máy đang chạy (device tree, cây clock, register map driver), vì không có BSP Allwinner công khai cho SoC này, điều bình thường: cộng đồng linux-sunxi luôn đào mỏ thay vì chờ SDK hãng.
 
-## Tiến độ
+## 2. Tổng quan phần cứng
 
-Đang ở đâu, mới nhất lên đầu. Track B (kernel từ source) là trọng tâm; Track A (LineageOS GSI) là fallback hoãn lại. Chi tiết ở [STATUS.md](STATUS.md).
+| | |
+|---|---|
+| **SoC** | Allwinner H726 = `sun50iw15p1`, 4x Cortex-A53, FEL `0x1911`, codename `hermes` |
+| **Thế hệ clock/pin** | lớp sun55i (A523): `pll-peri0/1` nhiều nhánh, `smhc`, gate `sw-cfg-bus` theo từng peripheral (không phải H6) |
+| **Chế độ thực thi** | AArch32: hãng chạy A53 (vốn 64-bit) ở 32-bit, nên kernel sạch build 32-bit cho khớp |
+| **RAM** | ~1 GB (low-RAM) |
+| **Hiển thị** | 720p (1280x720) imager **LVDS** 4-lane (`z20hd720m`), không có co-processor MIPS, **keystone phần cứng** (`ksc100`) |
+| **GPU** | Mali (lớp Midgard), chạy Panfrost |
+| **Video** | dual Cedar VE (blob CedarX) |
+| **Wi-Fi / BT** | AIC8800 (`rwnx`) |
+| **Lưu trữ** | eMMC, A/B dynamic `super` |
+| **Khôi phục** | FEL (BootROM), flash qua PhoenixSuit; ảnh stock IMAGEWTY reflash an toàn, partition reserve/calib được skip |
+| **Stock** | Android 14, kernel BSP Allwinner 5.15 (32-bit), clone BadBox |
+
+## 3. Tiến độ
+
+Track B (kernel từ source) là trọng tâm; Track A (LineageOS GSI) là fallback hoãn lại. Chi tiết ở [STATUS.md](STATUS.md).
 
 | Giai đoạn | Việc | Trạng thái |
 |---|---|---|
 | Phase 0 | Recon: xác nhận Treble, thông số máy, chốt hai track | Xong |
-| B1 | Dịch ngược driver display + keystone thành register map ([re/](re/)) | Xong, 8 note |
-| B2 | Nền kernel build-được: device tree, `defconfig`, build script; build mainline 6.16.7 ra kernel `Image` + DTB ([kernel/](kernel/)) | Xong, compile + build |
-| B2 | Driver CCU + pinctrl sun50iw15 | Đang làm, core subset compile |
-| Gate #0 | Handoff boot: stock là AArch32, nên build kernel 32-bit (`ARCH=arm`) khớp chuỗi vendor ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | Đã quyết; `zImage` build được |
-| B3 | Bring-up boot: heartbeat GPIO gate-#0 (LED đỏ x5) đã nhúng vào `zImage` ([kernel/heartbeat.md](kernel/heartbeat.md)); flash PhoenixSuit để thử | Sẵn sàng flash trên máy |
+| B1 | Dịch ngược driver display + keystone thành register map ([re/](re/)) | Xong, 9 note |
+| B2 | Nền kernel build-được: device tree, `defconfig`, build script, và driver **CCU + pinctrl** sun50iw15 thật ([kernel/](kernel/)) | Xong, compile vào kernel |
+| Gate #0 | Handoff boot: chuỗi stock là AArch32, nên build kernel **32-bit** (`ARCH=arm`) cho khớp ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | Đã quyết; `zImage` build được |
+| B3 | Xác nhận gate #0: heartbeat GPIO (LED đỏ x5) nhúng vào `zImage` ([kernel/heartbeat.md](kernel/heartbeat.md)); flash PhoenixSuit rồi nhìn | Sẵn sàng flash trên máy |
+| B4 | Vòng bring-up driver (display, keystone, Wi-Fi) từ map B1 | Chưa bắt đầu |
 | Track A | LineageOS GSI (fallback hoãn) | Chưa bắt đầu |
 
-**Build được hiện tại:** device tree, config, và driver CCU + pinctrl sun50iw15 của ta, tất cả biên dịch vào kernel `Image` mainline 6.16.7 qua `kernel/build.sh`. **Chưa chạy:** boot, cần xác nhận offset register CCU/pinctrl trên phần cứng và lý tưởng là có serial console. Phần RE nền (register map display/keystone) chính là cái làm việc viết driver trở nên khả thi.
+## 4. Vì sao
 
-## 2. Vì sao
+- **Mượt trên 1 GB.** Framework hãng quá nặng; chỉ kernel + userspace tinh gọn mới chạy tốt trên 1 GB.
+- **Đáng tin.** Userspace gốc dính BadBox (Play Store giả, backdoor setuid, telemetry), kernel hãng là nhị phân chưa kiểm toán. Mục tiêu là hệ sạch, kiểm toán được, từ source.
+- **Ưu tiên máy chiếu.** Giữ keystone + autofocus đã reverse; bỏ hết phần còn lại.
 
-- **Mượt trên 1 GB.** Framework hãng quá nặng; chỉ userspace tinh gọn mới chạy tốt trên 1 GB RAM.
-- **Đáng tin.** Userspace gốc dính BadBox (Play Store giả, backdoor setuid, telemetry), kernel hãng là nhị phân chưa kiểm toán. Mục tiêu là hệ sạch, kiểm toán được.
-- **Ưu tiên máy chiếu.** Giữ nguyên stack keystone và autofocus đã dịch ngược; bỏ hết phần còn lại.
+## 5. Hướng đi (hai track)
 
-## 3. Mục tiêu
+- **Track B, kernel từ source (chính):** mainline Linux 6.16 cho SoC, với device tree, CCU, pinctrl và driver display/keystone viết từ phần dịch ngược ở [re/](re/); các mảnh closed userspace (Mali, CedarX, firmware AIC8800) reuse dạng blob. Nằm trên đường găng vì ngay cả GSI cũng cần driver display mở mới ổn định.
+- **Track A, LineageOS GSI (fallback hoãn):** userspace Lineage sạch trên kernel hãng qua Treble. Không cần UART, cho máy dùng sớm, nhưng thừa hưởng lỗi HWC hãng tới khi driver display của Track B xong.
 
-- **Gọn:** vừa và chạy tốt trên 1 GB (cấu hình low-RAM, zram).
-- **Userspace sạch:** LineageOS, không phải MagcubicOS / BigDroid.
-- **Đáng tin:** vứt BadBox; hướng tới kernel từ source.
-- **Giữ tính năng máy chiếu:** logic keystone / autofocus / chế độ chiếu đã reverse.
-- **Default hợp lý:** Aurora Store làm store, bundle SmartTube, PhairPlay làm receiver cast mặc định.
+Lộ trình ở [PLAN.md](PLAN.md); chiến lược boot/debug ở [kernel/bringup-strategy.md](kernel/bringup-strategy.md).
 
-## 4. Hướng đi (hai nấc)
+## 6. Build
 
-- **Nấc A, LineageOS GSI qua Treble:** userspace Lineage sạch chạy trên kernel + blob `/vendor` của hãng qua Project Treble. Không phải đào blob hay build kernel; phần cứng vẫn chạy trong khi framework hãng bị thay. App máy chiếu gắn lại lên trên.
-- **Nấc B, port từ source:** dựng device tree, rebuild kernel từ BSP Allwinner cộng DTB và config trích xuất, gom blob vào `/vendor`, và dịch ngược có mục tiêu vài driver out-of-tree. Kernel sạch, kiểm toán được.
+Không cần Nix; script tự cài cross toolchain trên Ubuntu / WSL.
 
-Lộ trình đầy đủ ở [PLAN.md](PLAN.md).
+```sh
+# kernel 32-bit (mặc định), nhúng sẵn heartbeat gate-#0:
+HEARTBEAT=1 bash kernel/build.sh
+# -> arch/arm/boot/zImage  +  sun50i-h726-hy300ultra.dtb
 
-## 5. Dựa trên việc đã làm
+# build thường, hoặc Image 64-bit tham chiếu:
+bash kernel/build.sh
+TARGET=arm64 bash kernel/build.sh
+```
 
-Root, phần reverse-engineering (subsystem keystone / display, phương pháp `add_sum` cho IMAGEWTY), debloat và dọn BadBox, cùng pipeline hậu-root nằm ở repo chị em **[hoangphi01/hy300ultra-h726-allinone](https://github.com/hoangphi01/hy300ultra-h726-allinone)**. Repo này dựng OS trên nền đó.
+Chi tiết + các fact SoC-vs-H6 ở [kernel/README.md](kernel/README.md).
 
-## 6. Tài liệu
+## 7. Artifact build ra
 
-- **[PLAN.md](PLAN.md)** lộ trình, các giai đoạn, câu hỏi mở.
+- `zImage` (ARM 32-bit, ~11 MB) đã nhúng driver CCU + pinctrl + device tree; tùy chọn heartbeat.
+- `sun50i-h726-hy300ultra.dtb` (~9 KB).
+- `Image` 64-bit (~41 MB) qua `TARGET=arm64`, giữ để tham chiếu (chuỗi vendor chưa boot được, xem gate #0).
+
+Tất cả compile + build được; chưa boot (xem dưới).
+
+## 8. Thách thức đã biết
+
+- **Gate #0, handoff boot.** Kernel gốc AArch32, vào AArch64 trên SoC này chưa giải, nên build 32-bit. Đã xác nhận ở mức build; chưa xác nhận trên phần cứng tới khi flash heartbeat.
+- **Offset register CCU / pinctrl.** Dựa thế hệ A523 + cây clock đọc trực tiếp; offset là giả thuyết tới khi boot (lý tưởng là UART) xác nhận.
+- **Chưa có UART.** Bring-up mù: heartbeat GPIO + pstore thay serial. `sunxi-fel` không hỗ trợ `0x1911` nên loader là PhoenixSuit over FEL. Cáp USB-UART 3.3V là đòn bẩy lớn nhất.
+- **Stack display.** `vs-display`, `tvtop`, keystone và panel là việc driver lớn còn lại; đã dịch ngược ở [re/](re/) nhưng chưa viết thành driver mainline.
+
+## 9. Tài liệu
+
+- **[STATUS.md](STATUS.md)** trạng thái sống (cái gì chạy, cái gì kế).
+- **[PLAN.md](PLAN.md)** lộ trình, track và phase.
 - **[RULE.md](RULE.md)** cách vận hành và viết.
-- **[STATUS.md](STATUS.md)** đang ở đâu, cái gì chạy, cái gì chưa test.
+- **[DOCS_GUIDE.md](DOCS_GUIDE.md)** chỉ mục tài liệu và kỷ luật cập nhật.
+- **[re/](re/)** các note dịch ngược (mỗi driver một note, kèm cây clock).
+- **[kernel/](kernel/)** artifact build-được, [build + fact SoC](kernel/README.md), [chiến lược bring-up](kernel/bringup-strategy.md), [heartbeat](kernel/heartbeat.md).
 
-## 7. Miễn trừ
+## 10. Dựa trên việc đã làm
 
-Thử nghiệm. Flash thiết bị Allwinner có thể brick vĩnh viễn. Chỉ cho **H726 (`sun50iw15` / `0x1911`)**. Không tái phân phối firmware, blob hãng hay APK bên thứ ba; chỉ link nguồn. Không liên kết với Allwinner, Magcubic, Gojodoq hay Google.
+Root, phần reverse-engineering (keystone / display, phương pháp `add_sum` cho IMAGEWTY), debloat + dọn BadBox, cùng pipeline hậu-root nằm ở repo chị em **[hoangphi01/hy300ultra-h726-allinone](https://github.com/hoangphi01/hy300ultra-h726-allinone)**. Phương pháp port mainline neo vào **[shift/sun50iw12p1-research](https://github.com/shift/sun50iw12p1-research)** (sibling H713). Repo này dựng OS trên nền đó.
+
+## 11. Miễn trừ
+
+Thử nghiệm. Flash thiết bị Allwinner có thể brick vĩnh viễn (dù FEL + ảnh stock giúp khôi phục đáng tin). Chỉ cho **H726 (`sun50iw15` / `0x1911`)**. Không tái phân phối firmware, blob hãng hay APK bên thứ ba; chỉ link nguồn. Không liên kết với Allwinner, Magcubic, Gojodoq hay Google.
