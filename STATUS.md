@@ -71,6 +71,17 @@ The running kernel loads its drivers as modules, split across two stores. `/vend
 
 **Exact build string to match (Track B):** `vermagic = 5.15.167-ge72cb82a460c-dirty SMP preempt mod_unload modversions ARMv7 p2v8`, built with **Android clang 17.0.2 (r487747c) + LTO**. Two consequences: the tree is `-dirty` (vendor-modified, no clean public source, which is why we mine), and `modversions` means symbol CRCs are enforced, so individual replacement modules would need matching `Module.symvers`; Track B builds the whole kernel from source, which sidesteps that.
 
+### First RE pass: the keystone engine (`sunxi_ksc.ko`)
+
+A static pass (ELF symbols + `.modinfo` + strings; no full decompilation yet) already maps how projector keystone works, which is what re-adding keystone on a clean build depends on. The driver is `AllWinner`'s `KSC driver`, a platform driver, `compatible = allwinner,ksc100` (also `ksc110`), `depends=tvpanel`, `import_ns=DMA_BUF`, `license=GPL`.
+
+- **It is a LUT-based geometric warp engine, not a matrix.** It allocates three LUT banks (`Memory0/1/2 ... ksc lut buffer`) plus a double buffer, and swaps them live (`ksc_reg_switch_lut_buf`, `is_reg_update_finish`), with an `KSC_IRQ_LUT_OVER_SPAN` guard. Userspace computes the warp table (corner geometry) and uploads it; the hardware resamples the image through it.
+- **It also does picture quality on the warped image:** `antialias` (param 0..128) and `sharpen` (level 0..4), via `ksc_reg_pq_setting` / `__ksc_set_pq_para`.
+- **Interface to userspace:** a char device (`alloc_chrdev_region` + `__class_create` + `device_create`), `ksc_ioctl`, `ksc_mmap` / `ksc_mem_mmap` (maps the LUT and frame buffers), a sysfs group, and DMA-BUF import (`ksc_dma_map`, `dma_mmap_attrs`) so the LUT and frames are shared with the display pipeline rather than copied.
+- **Interface to the display pipeline:** it exports `ksc_online_enable` (`EXPORT_SYMBOL_GPL`) and has `tvdisp_ksc_enable` / `sunxi_tvdisp_top_ksc_enable`, so `tvdisp_top` / `vs-display` switch keystone on inline. Front-end and back-end error/finish interrupts (`KSC_IRQ_FE_ERR`, `KSC_IRQ_BE_FINISH`, `SVP2KSC_DMT_ERR`) gate the frame handoff from the SVP path.
+
+Implication for the clean build: keystone is a kernel LUT engine plus a userspace table generator. Re-adding it means keeping (or porting) `sunxi_ksc.ko` and its `tvpanel` dependency, keeping the keystone app that computes the LUT, and wiring `ksc_online_enable` into the clean kernel's display path. The same first-pass method now applies to `sunxi_tvtop.ko`, `sunxi-ve.ko` and the `vs-*` modules.
+
 ## Verdict
 
 - **Track A (clean userspace) is reachable:** build a 32-bit LineageOS 21 (arm) GSI from source, flash it to `system_a`, keep the vendor kernel, `/vendor` and `/product`. Clean userspace, vendor kernel.
