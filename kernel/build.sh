@@ -58,6 +58,14 @@ cp "$HERE/sun50i-h726-hy300ultra.dts" "$DTSDIR/"
 grep -q 'sun50i-h726-hy300ultra.dtb' "$DTSDIR/Makefile" || \
 	echo 'dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h726-hy300ultra.dtb' >> "$DTSDIR/Makefile"
 
+if [ "$TARGET" != "arm64" ] && [ "${HEARTBEAT:-0}" = "1" ]; then
+	echo ">> gate-#0 GPIO heartbeat (decompressor)"
+	CH=arch/arm/boot/compressed
+	cp "$HERE/heartbeat/heartbeat-h726.S" "$CH/"
+	sed -i '/heartbeat-h726.S/d' "$CH/head.S"
+	sed -i 's@^\( AR_CLASS(\tmrs\tr9, cpsr\t)\)@#include "heartbeat-h726.S"\n\1@' "$CH/head.S"
+fi
+
 echo ">> config"
 make "$DEFCFG"
 if [ "$TARGET" = "arm64" ]; then

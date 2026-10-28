@@ -34,7 +34,7 @@ Where this is, most recent first. Track B (a from-source kernel) is the primary 
 | B2 | A buildable kernel base: board device tree, `defconfig`, build script; builds mainline 6.16.7 into a kernel `Image` + DTB ([kernel/](kernel/)) | Done, compiles and builds |
 | B2 | sun50iw15 CCU + pinctrl drivers | In progress, core subset compiles |
 | Gate #0 | Boot handoff: stock is AArch32, so the kernel is built 32-bit (`ARCH=arm`) to match the vendor chain ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | Decided; `zImage` builds |
-| B3 | Boot bring-up: GPIO heartbeat, flash via PhoenixSuit (no UART yet) | Next, needs the device |
+| B3 | Boot bring-up: a gate-#0 GPIO heartbeat (red LED x5) is built into the `zImage` ([kernel/heartbeat.md](kernel/heartbeat.md)); flash via PhoenixSuit to test | Ready to flash on the device |
 | Track A | LineageOS GSI (deferred fallback) | Not started |
 
 **Builds today:** the device tree, the config, and our sun50iw15 CCU and pinctrl drivers, all into a mainline 6.16.7 kernel `Image` via `kernel/build.sh`. **Not working yet:** booting, which needs the CCU/pinctrl register offsets confirmed on hardware and, ideally, a serial console. The reverse-engineering groundwork (the display/keystone register maps) is what makes the driver work possible.
@@ -99,7 +99,7 @@ Firmware gốc là bản clone white-label dính họ malware BadBox và framewo
 | B2 | Nền kernel build-được: device tree, `defconfig`, build script; build mainline 6.16.7 ra kernel `Image` + DTB ([kernel/](kernel/)) | Xong, compile + build |
 | B2 | Driver CCU + pinctrl sun50iw15 | Đang làm, core subset compile |
 | Gate #0 | Handoff boot: stock là AArch32, nên build kernel 32-bit (`ARCH=arm`) khớp chuỗi vendor ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | Đã quyết; `zImage` build được |
-| B3 | Bring-up boot: GPIO heartbeat, flash qua PhoenixSuit (chưa có UART) | Kế tiếp, cần máy |
+| B3 | Bring-up boot: heartbeat GPIO gate-#0 (LED đỏ x5) đã nhúng vào `zImage` ([kernel/heartbeat.md](kernel/heartbeat.md)); flash PhoenixSuit để thử | Sẵn sàng flash trên máy |
 | Track A | LineageOS GSI (fallback hoãn) | Chưa bắt đầu |
 
 **Build được hiện tại:** device tree, config, và driver CCU + pinctrl sun50iw15 của ta, tất cả biên dịch vào kernel `Image` mainline 6.16.7 qua `kernel/build.sh`. **Chưa chạy:** boot, cần xác nhận offset register CCU/pinctrl trên phần cứng và lý tưởng là có serial console. Phần RE nền (register map display/keystone) chính là cái làm việc viết driver trở nên khả thi.
