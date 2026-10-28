@@ -34,7 +34,7 @@ Build a 32-bit LineageOS 21 (arm) GSI from source and flash it to `system_a`, ke
 Build a transparent kernel the linux-sunxi way, entirely from the mine plus open sources:
 1. `dtc` the extracted DTB to `.dts`; this is the authoritative hardware description.
 2. Use the extracted `config.gz` as the defconfig base.
-3. **Anchor on the H713 (`sun50iw12`) sibling** ([YuujiLab/HY300-H713-Research](https://github.com/YuujiLab/HY300-H713-Research), probonopd) and mainline linux-sunxi: H726 is one SoC step away, so their bring-up (CCU clocks, pinctrl, DRAM, device tree) is the base to extend to sun50iw15.
+3. **Anchor on the H713 (`sun50iw12`) sibling** ([YuujiLab/HY300-H713-Research](https://github.com/YuujiLab/HY300-H713-Research), [probonopd/hy310-deshittify](https://github.com/probonopd/hy310-deshittify)) and mainline linux-sunxi. Note these anchors are research and tooling repos (partition layout, GSI discoveries, `build_super.py`, DRM and FEL notes), not kernel trees, so the kernel base is mainline linux-sunxi plus any upstream sun50iw12 bring-up, guided by our extracted DTS/config and their findings.
 4. Reuse the closed blobs as-is (Mali userspace, CedarX VE, display HAL, VE firmware).
 5. Write or port the genuinely new drivers: the SoC-specific display path (`vs-display` / `vs-osd` / `tvtop` / the DE) and the VE kernel glue. RE the vendor `.ko` with REA / Ghidra only where mainline has nothing to diff against.
 6. Boot, then debug hardware quirks from `dmesg`.

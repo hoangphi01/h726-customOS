@@ -82,6 +82,39 @@ A static pass (ELF symbols + `.modinfo` + strings; no full decompilation yet) al
 
 Implication for the clean build: keystone is a kernel LUT engine plus a userspace table generator. Re-adding it means keeping (or porting) `sunxi_ksc.ko` and its `tvpanel` dependency, keeping the keystone app that computes the LUT, and wiring `ksc_online_enable` into the clean kernel's display path. The same first-pass method now applies to `sunxi_tvtop.ko`, `sunxi-ve.ko` and the `vs-*` modules.
 
+### Display stack: dependency graph and bring-up order
+
+Reading each module's `.modinfo depends` plus its exported/imported symbols gives the whole display subsystem as a dependency graph. The bring-up (and module load) order for Track B falls straight out of it:
+
+```
+backlight        sunxi_tvtop        sunxi_ve            hidtvreg_dev
+   |                |  \               (standalone:          (standalone)
+ tvpanel          tvtop_adc            "User mode CEDAR
+   |  \                                 device interface")
+   |   +----------------+
+panel_lvds_gen         sunxi_ksc  <--- ksc_online_enable
+z20hd720m                |   \
+                       vs_osd   vs_display
+                               (orchestrator: panel + tvtop
+                                + afbd + svp, dp_buf via dma-buf,
+                                behind the sun50iw15 IOMMU)
+```
+
+- `backlight` (no deps) -> `tvpanel` (deps `backlight`) is the panel base; `panel_lvds_gen`, `z20hd720m` and `sunxi_ksc` all depend on `tvpanel`.
+- `sunxi_tvtop` (no deps) is the TV-subsystem top: it exports a client-register API (`sunxi_tvtop_client_register`, `sunxi_tvtop_capclk_sel`, `sunxi_tvtop_clk_get/put`, `sunxi_tvtop_set_adc_ctrl`) that `sunxi_tvtop_adc`, `vs_display` and the capture path register into. It owns the shared clocks / resets / ADC.
+- `vs_display` (author "Display Team", deps `tvpanel, sunxi_tvtop`) is the orchestrator: it drives panel prepare/enable, AFBD (`sunxi_tvdisp_top_afbd_enable`), SVP (`...svp_enable`), allocates display buffers (`dp_buf_*`) as DMA-BUF fds, and sits behind the IOMMU (`sunxi_enable_device_iommu`).
+- **`vs_osd` depends on `sunxi_ksc`:** the OSD / UI layer is routed through the keystone warp too, so the whole composited frame (video and UI) is keystone-corrected, not just video.
+- **`sunxi_ve` is standalone** ("User mode CEDAR device interface", no deps): it is just the `/dev` node the userspace CedarX stack talks to, decoupled from the display path. It can be brought up and reused on its own, which de-risks video decode from the harder display port.
+
+### The anchor repos: what they actually provide (correction)
+
+The H713/H310 anchors are **research and tooling repos, not kernel source trees**, so "anchor on H713" means reuse their findings and scripts over mainline linux-sunxi, not fork a ready kernel.
+
+- [YuujiLab/HY300-H713-Research](https://github.com/YuujiLab/HY300-H713-Research): same HY300 family, one SoC back. Has `Firmware/PARTITION_LAYOUT.md` + `SYSTEM_ANALYSIS.md`, `GSI/GSI_DISCOVERIES.md` (directly useful for Track A), `Recovery/build_super.py` (a `super.img` builder for repacking), `Boot/` + `FEL/` + `Hardware/UART_FEL.md` (the UART/FEL recovery path).
+- [probonopd/hy310-deshittify](https://github.com/probonopd/hy310-deshittify): `docs/drm.md` and `docs/sleep-and-screen-off.md` (display/DRM notes for this family), `hdmi-input/`, `projection/`, `privacy/ioc.txt` (indicators of compromise), debloat and launcher-switch scripts.
+
+So Track B's kernel base is mainline linux-sunxi plus whatever sun50iw12 (H713) bring-up exists upstream, guided by our extracted DTS/config and these research repos; there is no H713 kernel tree to clone.
+
 ## Verdict
 
 - **Track A (clean userspace) is reachable:** build a 32-bit LineageOS 21 (arm) GSI from source, flash it to `system_a`, keep the vendor kernel, `/vendor` and `/product`. Clean userspace, vendor kernel.
@@ -111,7 +144,7 @@ Both run in parallel: A delivers a usable clean-userspace build; B builds a trus
 
 **Track B, build the independent BSP from the mine:**
 - [x] `dtc` the extracted DTB to `.dts` (done; 3196 lines, driver surface classified above).
-- [ ] Obtain the H713 (`sun50iw12`) kernel tree (YuujiLab / probonopd) as the porting base; map our DTS and `config.gz` onto it.
+- [x] Pull the H713/H310 anchors (YuujiLab / probonopd): confirmed research + tooling, not kernel trees. Kernel base is mainline linux-sunxi + any upstream sun50iw12 bring-up, guided by our DTS/config.
 - [ ] Stage the vendor blobs and `.ko` (Mali, CedarX VE, AIC8800, `vs-display`) locally; split "reuse" from "reverse".
 - [ ] RE the out-of-tree drivers (`vs,display`/`vs,osd`, `tvtop`/`tvdisp_top`, `tcon`/`lvds0`, `z20hd720m`, `ksc100`) with REA/Ghidra against the DTS reg/clock/irq map.
 
