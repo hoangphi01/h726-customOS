@@ -66,10 +66,16 @@ static struct ccu_nkmp pll_ddr0_clk = {
 	.p		= _SUNXI_CCU_DIV(0, 1),
 	.common		= {
 		.reg		= 0x010,
+		/*
+		 * Bring-up: NOT marked CLK_IS_CRITICAL. The register offset is
+		 * still the A523 hypothesis, so we must not let the clk core
+		 * enable this at init (a wrong offset would poke an unrelated
+		 * register). U-Boot already brought DRAM up and left it running.
+		 * Re-add CLK_IS_CRITICAL once the offset is hardware-confirmed.
+		 */
 		.hw.init	= CLK_HW_INIT_PARENTS_DATA("pll-ddr0", osc24M,
 						&ccu_nkmp_ops,
-						CLK_SET_RATE_UNGATE |
-						CLK_IS_CRITICAL),
+						CLK_SET_RATE_UNGATE),
 	},
 };
 
@@ -82,10 +88,10 @@ static struct ccu_nkmp pll_peri0_clk = {
 	.p		= _SUNXI_CCU_DIV(0, 1),
 	.common		= {
 		.reg		= 0x020,
+		/* Bring-up: NOT CLK_IS_CRITICAL (see pll-ddr0 above). */
 		.hw.init	= CLK_HW_INIT_PARENTS_DATA("pll-peri0", osc24M,
 						&ccu_nkmp_ops,
-						CLK_SET_RATE_UNGATE |
-						CLK_IS_CRITICAL),
+						CLK_SET_RATE_UNGATE),
 	},
 };
 

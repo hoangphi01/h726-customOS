@@ -62,14 +62,49 @@ A 3.3V USB-UART adapter (about 2-5 USD) on the board's debug pads gives log outp
 
 1. ~~Decide the fork~~ Done: Branch 1 (32-bit `ARCH=arm`); the `zImage` builds with our drivers in.
 2. ~~Confirm gate #0~~ **Done (2026-10-28): gate #0 is PASSED.** A GPIO heartbeat in the decompressor, flashed to `boot_a` by `dd` on the rooted device, ran: the vendor U-Boot entered our 32-bit kernel and the CPU executed it. Branch 1 is proven on hardware.
-3. **Now: tune the CCU/pinctrl offsets** (hardware-confirm the A523-hypothesis values in [../re/ccu-sun50iw15.md](../re/ccu-sun50iw15.md)) so the kernel boots past the heartbeat.
-4. Bring up drivers in dependency order (see [../re/README.md](../re/README.md)).
+3. **Now (B3b): walk the kernel to init with checkpoint beacons.** Instead of jumping straight
+   to CCU offsets, we bisect *where* the kernel stops using a ladder of GPIO beacons (below) and
+   an authoritative appended device tree. Build A is built and compiles clean; it is the next flash.
+4. Then confirm/fix the CCU/pinctrl offsets (A523-hypothesis, [../re/ccu-sun50iw15.md](../re/ccu-sun50iw15.md))
+   wherever a beacon shows the kernel stalling in clock-dependent code.
+5. Bring up drivers in dependency order (see [../re/README.md](../re/README.md)).
+
+## The checkpoint-beacon method (B3b, no UART)
+
+With no serial console, the only output is a GPIO: a direct `writel` to the PIO at `0x02000000`
+ticks the focus motor (PH13). Code at successive boot stages ticks a distinct number of times; the
+highest count seen is the furthest the boot reached, and a steady repeating tick means the kernel is
+fully alive. See [heartbeat.md](heartbeat.md) for the artifacts.
+
+| Ticks | Stage | Proves |
+|---|---|---|
+| 1 | decompressor entry | gate #0 (already passed) |
+| 2 | kernel proper, after `__create_page_tables` (MMU off) | handed into `vmlinux` |
+| 3 | `early_initcall` | reached the init thread (setup_arch + mm + sched + timers) |
+| steady ~1 Hz | `late_initcall` kthread | kernel fully alive |
+
+Two facts (verified against mainline v6.12/6.16 source) make this robust:
+
+- **The appended DTB wins.** `CONFIG_ARM_APPENDED_DTB` + `cat zImage our.dtb` makes the decompressor
+  use our device tree and ignore whatever the vendor U-Boot passes in `r2`, so we control the DT. The
+  cmdline is forced (`CMDLINE_FORCE`, `nr_cpus=1`) because there is no console to read anyway, and
+  `nr_cpus=1` skips SMP secondary bring-up over PSCI/SMC. (`CONFIG_ARM_ATAG_DTB_COMPAT` is on in case
+  U-Boot passes ATAGs rather than a DTB.)
+- **A wrong CCU offset does not infinite-hang clk init.** The sunxi-ng PLL lock wait is bounded (70 ms
+  timeout + `WARN`, not a spin). So a true freeze at clk init is a *side effect* of a bad register
+  write, not a lock spin; we still drop `CLK_IS_CRITICAL` on the bring-up CCU so the framework does not
+  touch hardware at a guessed offset during probe, but the beacon runs regardless of CCU outcome (it
+  pokes the GPIO directly).
+
+Because the beacon pokes the GPIO directly and does not depend on any driver probing, the only things
+that *must* be correct for Build A to reach the steady heartbeat are the CPU/MMU path, the DT memory
+node and the arch timer. The CCU matters only when real peripherals come up.
 
 ### Safety lesson from the gate-#0 run (important)
 
 The heartbeat that confirmed gate #0 drove the cooling **fan** off (the fan cut out, which is how we knew our code ran). But the vendor U-Boot's splash was still being projected, so the **light engine was on with no cooling**, and after about 15 s the imager panel overheated (a dark bloom spread from the centre of the projected image; power was cut immediately and it is expected to recover once cool). **Rules for any on-device bring-up from now on:**
 
-- **Never drive the fan**, and never leave the device hung with the light engine on and no cooling. Use the **focus motor** (no thermal role) or, better, a UART console (read-only) as the signal.
+- **Never drive the fan**, and never leave the device hung with the light engine on and no cooling. Use the **focus motor** (no thermal role) or, better, a UART console (read-only) as the signal. The kernel proper is safe here on its own: the bring-up device tree keeps `pwm-fan` disabled, so our kernel never touches cooling and the fan stays in the state U-Boot left it (running) for the whole run, even if the kernel hangs. The only way to cut the fan is the beacon asm writing PL7 directly, which is exactly what the beacons now refuse to do.
 - Keep hang time short: recover promptly (FEL + reflash the rooted image) rather than letting a hung kernel sit.
 - The committed heartbeat ([heartbeat/heartbeat-h726.S](heartbeat/heartbeat-h726.S)) is retargeted to the motor and documented accordingly.
 

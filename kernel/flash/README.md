@@ -1,85 +1,120 @@
-# Flashing the heartbeat test (step by step)
+# Flashing the B3 bring-up kernel (step by step)
 
-How to put the 32-bit `zImage` (with the gate-#0 heartbeat) onto the device and read the result. The goal is one yes/no answer: **does the vendor U-Boot enter our kernel?**
+How to put the 32-bit `zImage-dtb` (with the B3 checkpoint beacons and the appended bring-up
+device tree) onto the device and read the result. The goal is to see **how far the kernel gets**:
+count the motor ticks, then watch for the steady heartbeat (see [../heartbeat.md](../heartbeat.md)
+for the ladder).
 
-> **This test already succeeded (2026-10-28): gate #0 is PASSED** (see [../bringup-strategy.md](../bringup-strategy.md)). This page is kept as the procedure, to re-run if ever needed.
->
-> **Safety lesson from that run:** the heartbeat must **never drive the cooling fan**. The first version did, and with the U-Boot splash still projecting (light engine on) the imager panel overheated after ~15 s. The heartbeat now uses the **focus motor** (no thermal role). Never leave a hung kernel sitting with the light engine on; recover promptly.
+> [!CAUTION]
+> **Never let a beacon drive the cooling fan, and never leave a hung kernel sitting.** The light
+> engine is on during the U-Boot splash. The beacons only ever tick the **focus motor** (PH13); the
+> kernel keeps `pwm-fan` disabled, so cooling stays in the U-Boot (on) state for the whole run. Still
+> recover promptly if it hangs.
 
-Nothing here can brick the device: FEL stays available and the stock / rooted image reflashes. But cut power and recover quickly if the kernel hangs - do not let it sit.
+> [!WARNING]
+> **Have the FEL path ready before you flash.** A bring-up kernel does not reach Android, so after you
+> read the beacons you must reflash to get Android back, and if it hangs you cannot `dd`. FEL entry is
+> the recessed **FLASH button next to HDMI** (paperclip + power → PC shows `1f3a:efe8`), not Vol+ IR.
 
-## The one rule that matters: how PhoenixSuit verification works
-
-This is the lesson from rooting this device, and it is easy to get wrong.
-
-- Inside an Allwinner **IMAGEWTY**, every partition payload is followed by a 16-byte **verify file** named `V<name>.fex` (first 4 bytes = an `add_sum` checksum: pad the payload to a multiple of 4, then sum all little-endian u32 words mod 2^32).
-- If you edit a payload (e.g. the kernel in `boot`) and do **not** update its `V<name>.fex`, **PhoenixSuit rejects the whole image**: *"Please ensure the firmware file is valid."*
-- The method PhoenixSuit **accepts** is **minimal diff**: copy the base image whole, overwrite only the one payload at its exact offset and the **same size**, patch only that payload's `V` file, and **never touch `dlinfo`, `sys_partition` or the header**. The "surgical dlinfo" approach (trimming the partition list) is **rejected**; do not use it.
-- A full flash is safe anyway: `dlinfo` lists 13 firmware partitions (bootloader, env, boot, vendor_boot, init_boot, super, misc, vbmeta*, dtbo, media_data, Reserve0). **`userdata` is not in the list, so `/data` is never flashed**, and Allwinner **skips** the `Reserve0` calibration partition. So customizations in `/data` and the per-unit calibration survive a flash; only `super` is reset to the base image's.
-
-The cleanest way to avoid this problem entirely is not to use an IMAGEWTY at all, below.
-
-## Method A (recommended): `dd` the boot_a partition on the rooted device
-
-The device is rooted, so write `boot_a` directly. `dd` copies raw bytes; U-Boot reads the partition directly (verity is disabled), so **there is no verify file and nothing to reject**, and **only `boot_a` is touched** (not even `super`).
-
-**1. Build the boot_a image** (a stock Android boot image with our zImage as the kernel):
+## Build the image to flash
 
 ```sh
-HEARTBEAT=1 bash kernel/build.sh                       # builds the zImage
+HEARTBEAT=1 bash kernel/build.sh
+# -> arch/arm/boot/zImage-dtb   (zImage + appended bring-up DTB; flash THIS, not plain zImage)
+```
+
+Then wrap it in a `boot_a` image (a stock Android boot image with our `zImage-dtb` as the kernel):
+
+```sh
 python3 kernel/flash/build_heartbeat_boot.py \
     /path/to/HY300Ultra_H726_Android14_STOCK_Magcubic.img \
-    ~/h726kernel/linux-6.16.7/arch/arm/boot/zImage \
+    ~/h726kernel/linux-6.16.7/arch/arm/boot/zImage-dtb \
     boot_hb_dd.img
 ```
 
-(`boot_hb_dd.img` is 64 MB, the same size as `boot_a`. You can also dump your own `boot_a` from the device and pass that instead of the stock image.)
+The packer aborts if `zImage-dtb` does not fit the stock kernel slot. (Confirmed: ~11.8 MB into a
+~38.6 MB slot, so `boot_hb_dd.img` is 64 MB, the same size as `boot_a`.)
 
-**2. Back up the current boot_a**, then write ours:
+## Which flash method
+
+**`dd` needs root; a PhoenixSuit boot-only image does not.** Pick by the device's current state:
+
+- **If root (`su`) works:** use Method A (`dd`) - fastest, touches only `boot_a`.
+- **If root is down** (e.g. just after a recovery flash wiped `/data`, so the Magisk app / Superuser
+  are not set up): use Method B (PhoenixSuit, boot-only minimal diff). No root needed.
+
+Either way, only `boot_a` is written, so `/data` and calibration are untouched (see the verify rule
+below). Keep a backup of the stock/rooted `boot_a` to restore.
+
+## Method A: `dd` on the rooted device
 
 ```sh
 adb shell su -c 'dd if=/dev/block/by-name/boot_a of=/sdcard/boot_a_backup.img'
-adb pull /sdcard/boot_a_backup.img            # keep this safe
+adb pull /sdcard/boot_a_backup.img            # keep this safe (the restore image)
 
 adb push boot_hb_dd.img /data/local/tmp/boot_hb.img
 adb shell su -c 'dd if=/data/local/tmp/boot_hb.img of=/dev/block/by-name/boot_a'
 adb reboot
 ```
 
-**3. Watch** the red LED in the first second or two after it reboots.
+(Run adb from **PowerShell**, not Git-bash, which mangles `/data/...` paths. See [../../LESSONS.md](../../LESSONS.md).)
 
-## Reading the result
+## Method B: PhoenixSuit, boot-only minimal-diff image (no root)
 
-| What you see | What it means | Next |
-|---|---|---|
-| Red LED blinks ~5 times | **Gate #0 passed.** U-Boot entered our 32-bit kernel; the CPU is running it. | On to the CCU/pinctrl offsets. |
-| No blink, device does not reach Android | The pin guess is wrong, or U-Boot did not enter the kernel. | Recover, then retarget the pin and retry. |
-
-The device will **not** boot into Android with our kernel (the CCU is not corrected yet, so it hangs after the heartbeat). That is expected; the heartbeat is the whole signal for this run.
-
-## Recovery
-
-Because the heartbeat kernel hangs, Android will not come up to `dd` the backup back. Recover over FEL:
-
-1. Enter FEL: hold Vol+ on the IR remote at power-on (or the FEL pad); the PC sees `1f3a:efe8`.
-2. PhoenixSuit V1.19 -> flash the **unmodified** rooted image `root-tools/HY300Ultra_H726_ROOTED_v2.img` (or the stock image). Unmodified images already carry correct verify files, so there is nothing to repack and nothing to reject.
-3. `/data` and calibration are preserved (not flashed); the device boots the rooted Android again.
-
-## Method B (alternative): PhoenixSuit, minimal-diff image
-
-If you prefer to flash an IMAGEWTY, build one with `kernel/flash/pack_heartbeat_boot.py` using the **rooted v2 image as the base** (so you stay rooted). It follows the accepted minimal-diff method: it overwrites only `boot.fex` and recomputes only `Vboot.fex`, and confirms the `add_sum` algorithm against the base before writing; `dlinfo` and everything else are untouched.
+Build an IMAGEWTY that overwrites only `boot.fex`, using the rooted v2 image as the base so you land
+back in rooted Android:
 
 ```sh
 python3 kernel/flash/pack_heartbeat_boot.py \
     root-tools/HY300Ultra_H726_ROOTED_v2.img \
-    ~/h726kernel/linux-6.16.7/arch/arm/boot/zImage \
+    ~/h726kernel/linux-6.16.7/arch/arm/boot/zImage-dtb \
     boot_hb_imagewty.img
 ```
 
-Then flash `boot_hb_imagewty.img` with PhoenixSuit over FEL, the same flow used to root. Recovery is the same as above (flash the unmodified v2 image).
+Enter FEL (paperclip FLASH button + power), then flash `boot_hb_imagewty.img` with PhoenixSuit V1.19,
+the same flow used to root. Because it is a boot-only minimal diff (it never rewrites `vbmeta`/`super`),
+it does **not** trip the AVB/encryption `/data` wipe that a full recovery flash does.
 
-## If it does not blink: retarget the pin
+## The verify rule (why minimal-diff, and what a full flash costs)
 
-The red LED is `PL0`, a best guess from the H713 sibling; this unit may differ. Edit [../heartbeat/heartbeat-h726.S](../heartbeat/heartbeat-h726.S) (the register math and alternatives are in [../heartbeat.md](../heartbeat.md)), rebuild step 1, and retry. Each attempt is safe.
+- Inside an Allwinner **IMAGEWTY**, every partition payload is followed by a 16-byte verify file
+  `V<name>.fex` (first 4 bytes = an `add_sum`: pad the payload to a multiple of 4, sum all LE u32 words
+  mod 2^32). Edit a payload without recomputing its `V` file and PhoenixSuit rejects the whole image.
+- The accepted edit is **minimal diff**: overwrite only the one payload at its exact offset and same
+  size, recompute only that `V` file, and **never touch `dlinfo`, `sys_partition` or the header**. The
+  "surgical dlinfo" trick is rejected.
+- `userdata` is not in `dlinfo`, but a **full** flash still rewrites `vbmeta`/`super` to the base image,
+  which changes the AVB/encryption state and **force-formats `/data`** on the next boot (measured). So a
+  full recovery flash **wipes your customizations**; only `Reserve0` calibration survives. A **boot-only**
+  minimal-diff flash or a `dd` of `boot_a` leaves `/data` intact.
 
-A 3.3V USB-UART on the debug pads makes all of this unnecessary: with `earlycon` the kernel prints from its assembly head, so you see exactly where it is instead of guessing from a blink.
+## Reading the result
+
+Count the focus-motor ticks at power-on, then watch:
+
+| What you see | What it means | Next |
+|---|---|---|
+| 1 tick | Decompressor ran = **gate #0** (already known to pass). | - |
+| 2 ticks | Entered `vmlinux` (past `__create_page_tables`, MMU about to come on). | - |
+| 3 ticks | Reached the init thread (setup_arch + mm + sched + timers up). | - |
+| **steady ~1 Hz ticking, forever** | **Kernel fully alive.** Scheduler + timekeeping running. | Switch to the full DT, bring up a console/driver. |
+| bursts up to N then silence | Hung just after beacon N. | Add a finer beacon in that gap, rebuild, retry. |
+
+The device will **not** boot into Android with this kernel (no rootfs/console yet); reflash to recover.
+
+## Recover to Android (/data-safe)
+
+To get Android back **without** wiping `/data`, restore just `boot_a`:
+
+- **Rooted (if you still have `dd`):** `dd` your `boot_a_backup.img` back.
+- **Over FEL (no root):** flash a **boot-only** minimal-diff image whose `boot.fex` is the stock/rooted
+  `boot_a` (same `pack_heartbeat_boot.py`, but pass the stock `boot_a`/zImage you backed up), or a full
+  stock/rooted IMAGEWTY if you accept the `/data` wipe. Prefer boot-only to keep `/data`.
+
+## If a stage is silent: next build
+
+The beacons pin the stage; fix or instrument that stage. The asm beacons and the register math are in
+[../checkpoint/h726-blink.h](../checkpoint/h726-blink.h); the C beacons (and where to add a finer one,
+e.g. inside `setup_arch` after `early_ioremap_init()`) are in
+[../checkpoint/h726-checkpoint.c](../checkpoint/h726-checkpoint.c). A 3.3V USB-UART makes all of this
+unnecessary: with `earlycon` the kernel prints from its assembly head.

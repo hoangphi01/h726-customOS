@@ -49,7 +49,7 @@ Track B (a from-source kernel) is the primary focus; Track A (a LineageOS GSI) i
 | B1 | Reverse-engineer the display + keystone drivers into register maps ([re/](re/)) | Done, 9 notes |
 | B2 | Buildable kernel base: board device tree, `defconfig`, build scripts, and real sun50iw15 **CCU + pinctrl** drivers ([kernel/](kernel/)) | Done, compiles into the kernel |
 | Gate #0 | Boot handoff: the stock chain is AArch32, so the kernel is built **32-bit** (`ARCH=arm`) to match it; confirmed by a GPIO heartbeat in the `zImage` running on the device ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | **PASSED** - U-Boot enters our 32-bit kernel |
-| B3 | Boot further: hardware-correct the CCU/pinctrl register offsets so the kernel runs past the heartbeat (a UART console is now the key accelerator) | Next |
+| B3 | Boot further, blind: walk the kernel to init with a ladder of GPIO **checkpoint beacons** and an authoritative appended device tree, then fix the CCU/pinctrl offsets wherever a beacon stalls ([kernel/heartbeat.md](kernel/heartbeat.md)) | Build A built, compiles clean; next = flash + read beacons |
 | B4 | Driver bring-up loop (display, keystone, Wi-Fi) from the B1 maps | Not started |
 | Track A | LineageOS GSI (deferred fallback) | Not started |
 
@@ -81,9 +81,9 @@ The roadmap is in [PLAN.md](PLAN.md); the boot/debug strategy in [kernel/bringup
 No Nix required; the script installs an ordinary cross toolchain on Ubuntu / WSL.
 
 ```sh
-# 32-bit kernel (default), with the gate-#0 GPIO heartbeat built in:
+# 32-bit kernel (default), with the B3 checkpoint beacons + appended DTB:
 HEARTBEAT=1 bash kernel/build.sh
-# -> arch/arm/boot/zImage  +  sun50i-h726-hy300ultra.dtb
+# -> arch/arm/boot/zImage-dtb  (zImage + appended bring-up DTB; FLASH THIS)
 
 # plain build, or the 64-bit reference Image:
 bash kernel/build.sh
@@ -94,17 +94,17 @@ See [kernel/README.md](kernel/README.md) for the details and the SoC-vs-H6 facts
 
 ## 7. Build artifacts
 
-- `zImage` (32-bit ARM, ~11 MB) with our CCU + pinctrl drivers and device tree built in; optionally the heartbeat.
-- `sun50i-h726-hy300ultra.dtb` (~9 KB).
+- `zImage` (32-bit ARM, ~11 MB) with our CCU + pinctrl drivers and device tree built in; under `HEARTBEAT=1` also `zImage-dtb` (zImage + appended bring-up DTB + checkpoint beacons), the image to flash for B3.
+- `sun50i-h726-hy300ultra.dtb` (~9 KB) and the minimal `-bringup.dtb` (~2 KB).
 - a 64-bit `Image` (~41 MB) via `TARGET=arm64`, kept for reference (not bootable by the vendor chain, see gate #0).
 
 Everything compiles and builds; nothing boots yet (see below).
 
 ## 8. Known challenges
 
-- **Gate #0, the boot handoff.** The stock kernel is AArch32 and entering AArch64 on this SoC is unsolved, so we build 32-bit. Confirmed at the build level; unconfirmed on hardware until the heartbeat is flashed.
-- **CCU / pinctrl register offsets.** Modelled on the A523 generation and the live clock tree; the offsets are a hypothesis until a boot (ideally a UART console) confirms them.
-- **No UART yet.** Bring-up is blind: a GPIO heartbeat and pstore stand in for serial. `sunxi-fel` does not support `0x1911`, so the loader is PhoenixSuit over FEL. A 3.3V USB-UART adapter is the single biggest accelerator.
+- **Gate #0, the boot handoff.** The stock kernel is AArch32 and entering AArch64 on this SoC is unsolved, so we build 32-bit. **Passed on hardware (2026-10-28):** U-Boot enters our 32-bit kernel.
+- **CCU / pinctrl register offsets.** Modelled on the A523 generation and the live clock tree; the offsets are a hypothesis until a boot confirms them. The B3 bring-up de-risks this (the beacon does not depend on the CCU, which is registered without `CLK_IS_CRITICAL`).
+- **No UART yet.** Bring-up is blind: a ladder of GPIO **checkpoint beacons** (and pstore for later stages) stands in for serial. `sunxi-fel` does not support `0x1911`, so the loader is PhoenixSuit over FEL. A 3.3V USB-UART adapter is the single biggest accelerator.
 - **The display stack.** `vs-display`, `tvtop`, the keystone and the panel are the real remaining driver work; they are reverse-engineered in [re/](re/) but not yet written as mainline drivers.
 
 ## 9. Documentation
@@ -113,9 +113,10 @@ Everything compiles and builds; nothing boots yet (see below).
 - **[PLAN.md](PLAN.md)** the roadmap, tracks and phases.
 - **[RULE.md](RULE.md)** how the project is run and written.
 - **[DOCS_GUIDE.md](DOCS_GUIDE.md)** the documentation index and update discipline.
-- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** hard-won failures and how to recover (thermal, FEL button, verify, flashing).
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** on-device failures and how to recover (thermal, FEL button, verify, `/data`, flashing).
+- **[LESSONS.md](LESSONS.md)** development-process and toolchain mistakes, so they are not repeated.
 - **[re/](re/)** the reverse-engineering notes (one per driver, plus the clock tree).
-- **[kernel/](kernel/)** the buildable artifacts, [the build + SoC facts](kernel/README.md), [the bring-up strategy](kernel/bringup-strategy.md), and [the heartbeat](kernel/heartbeat.md).
+- **[kernel/](kernel/)** the buildable artifacts, [the build + SoC facts](kernel/README.md), [the bring-up strategy](kernel/bringup-strategy.md), and [the checkpoint beacons](kernel/heartbeat.md).
 
 ## 10. Built on prior work
 
@@ -165,7 +166,7 @@ Track B (kernel từ source) là trọng tâm; Track A (LineageOS GSI) là fallb
 | B1 | Dịch ngược driver display + keystone thành register map ([re/](re/)) | Xong, 9 note |
 | B2 | Nền kernel build-được: device tree, `defconfig`, build script, và driver **CCU + pinctrl** sun50iw15 thật ([kernel/](kernel/)) | Xong, compile vào kernel |
 | Gate #0 | Handoff boot: chuỗi stock là AArch32, nên build kernel **32-bit** (`ARCH=arm`) cho khớp; đã xác nhận bằng heartbeat GPIO trong `zImage` chạy trên máy ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | **ĐÃ QUA** - U-Boot vào kernel 32-bit của ta |
-| B3 | Boot xa hơn: chỉnh offset register CCU/pinctrl để kernel chạy qua heartbeat (cáp UART giờ là đòn bẩy chính) | Kế tiếp |
+| B3 | Boot xa hơn, mù: đưa kernel tới init bằng thang **checkpoint beacon** GPIO + device tree ghép-đuôi làm chủ, rồi chỉnh offset CCU/pinctrl ở chỗ beacon tắc ([kernel/heartbeat.md](kernel/heartbeat.md)) | Build A đã dựng, compile sạch; kế = flash + đọc beacon |
 | B4 | Vòng bring-up driver (display, keystone, Wi-Fi) từ map B1 | Chưa bắt đầu |
 | Track A | LineageOS GSI (fallback hoãn) | Chưa bắt đầu |
 
@@ -197,9 +198,9 @@ Lộ trình ở [PLAN.md](PLAN.md); chiến lược boot/debug ở [kernel/bring
 Không cần Nix; script tự cài cross toolchain trên Ubuntu / WSL.
 
 ```sh
-# kernel 32-bit (mặc định), nhúng sẵn heartbeat gate-#0:
+# kernel 32-bit (mặc định), kèm checkpoint beacon B3 + DTB ghép đuôi:
 HEARTBEAT=1 bash kernel/build.sh
-# -> arch/arm/boot/zImage  +  sun50i-h726-hy300ultra.dtb
+# -> arch/arm/boot/zImage-dtb  (zImage + bring-up DTB; FLASH FILE NÀY)
 
 # build thường, hoặc Image 64-bit tham chiếu:
 bash kernel/build.sh
@@ -210,17 +211,17 @@ Chi tiết + các fact SoC-vs-H6 ở [kernel/README.md](kernel/README.md).
 
 ## 7. Artifact build ra
 
-- `zImage` (ARM 32-bit, ~11 MB) đã nhúng driver CCU + pinctrl + device tree; tùy chọn heartbeat.
-- `sun50i-h726-hy300ultra.dtb` (~9 KB).
+- `zImage` (ARM 32-bit, ~11 MB) đã nhúng driver CCU + pinctrl + device tree; với `HEARTBEAT=1` còn có `zImage-dtb` (zImage + DTB bring-up ghép đuôi + checkpoint beacon), là file để flash cho B3.
+- `sun50i-h726-hy300ultra.dtb` (~9 KB) và bản tối giản `-bringup.dtb` (~2 KB).
 - `Image` 64-bit (~41 MB) qua `TARGET=arm64`, giữ để tham chiếu (chuỗi vendor chưa boot được, xem gate #0).
 
 Tất cả compile + build được; chưa boot (xem dưới).
 
 ## 8. Thách thức đã biết
 
-- **Gate #0, handoff boot.** Kernel gốc AArch32, vào AArch64 trên SoC này chưa giải, nên build 32-bit. Đã xác nhận ở mức build; chưa xác nhận trên phần cứng tới khi flash heartbeat.
-- **Offset register CCU / pinctrl.** Dựa thế hệ A523 + cây clock đọc trực tiếp; offset là giả thuyết tới khi boot (lý tưởng là UART) xác nhận.
-- **Chưa có UART.** Bring-up mù: heartbeat GPIO + pstore thay serial. `sunxi-fel` không hỗ trợ `0x1911` nên loader là PhoenixSuit over FEL. Cáp USB-UART 3.3V là đòn bẩy lớn nhất.
+- **Gate #0, handoff boot.** Kernel gốc AArch32, vào AArch64 trên SoC này chưa giải, nên build 32-bit. **Đã qua trên phần cứng (2026-10-28):** U-Boot vào kernel 32-bit của ta.
+- **Offset register CCU / pinctrl.** Dựa thế hệ A523 + cây clock đọc trực tiếp; offset là giả thuyết tới khi boot xác nhận. Bring-up B3 giảm rủi ro chỗ này (beacon không phụ thuộc CCU, và CCU đăng ký không `CLK_IS_CRITICAL`).
+- **Chưa có UART.** Bring-up mù: thang **checkpoint beacon** GPIO (+ pstore cho giai đoạn sau) thay serial. `sunxi-fel` không hỗ trợ `0x1911` nên loader là PhoenixSuit over FEL. Cáp USB-UART 3.3V là đòn bẩy lớn nhất.
 - **Stack display.** `vs-display`, `tvtop`, keystone và panel là việc driver lớn còn lại; đã dịch ngược ở [re/](re/) nhưng chưa viết thành driver mainline.
 
 ## 9. Tài liệu
@@ -229,9 +230,10 @@ Tất cả compile + build được; chưa boot (xem dưới).
 - **[PLAN.md](PLAN.md)** lộ trình, track và phase.
 - **[RULE.md](RULE.md)** cách vận hành và viết.
 - **[DOCS_GUIDE.md](DOCS_GUIDE.md)** chỉ mục tài liệu và kỷ luật cập nhật.
-- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** sự cố thực tế + cách khôi phục (nhiệt, nút FEL, verify, flash).
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** sự cố trên máy + cách khôi phục (nhiệt, nút FEL, verify, `/data`, flash).
+- **[LESSONS.md](LESSONS.md)** lỗi môi trường dev + toolchain, để không lặp lại.
 - **[re/](re/)** các note dịch ngược (mỗi driver một note, kèm cây clock).
-- **[kernel/](kernel/)** artifact build-được, [build + fact SoC](kernel/README.md), [chiến lược bring-up](kernel/bringup-strategy.md), [heartbeat](kernel/heartbeat.md).
+- **[kernel/](kernel/)** artifact build-được, [build + fact SoC](kernel/README.md), [chiến lược bring-up](kernel/bringup-strategy.md), [checkpoint beacon](kernel/heartbeat.md).
 
 ## 10. Dựa trên việc đã làm
 

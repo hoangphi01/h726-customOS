@@ -11,7 +11,8 @@ The map of this repo's documentation: what each file is for, and when to update 
 | **[PLAN.md](PLAN.md)** | The **roadmap**: tracks, phases, approach, open questions. The intended path, not the current position. | When the direction changes (a track reprioritised, a phase reshaped, a fork decided). Not for day-to-day progress. |
 | **[RULE.md](RULE.md)** | How this project is run and written (commit rules, no redistribution, tone, redaction). | Rarely, when a working rule changes. |
 | **[DOCS_GUIDE.md](DOCS_GUIDE.md)** | This file: the doc index and update discipline. | When a document is added, removed, or repurposed. |
-| **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** | Hard-won failures and recoveries (thermal, FEL button, PhoenixSuit verify, flashing). | When a new failure mode is hit and solved. |
+| **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** | On-device hard failures and recoveries (thermal, FEL button, PhoenixSuit verify, `/data`, flashing). | When a new on-device failure mode is hit and solved. |
+| **[LESSONS.md](LESSONS.md)** | Development-process and toolchain mistakes (WSL var bug, Git-bash path mangling, verify-the-artifact, idempotent injections). Points to TROUBLESHOOTING for the device ones. | Whenever a dev-environment or process mistake is made and corrected, so it is not repeated. |
 | **[re/](re/)** | Reverse-engineering notes, one per driver, plus [re/README.md](re/README.md) (the index) and the clock tree. Append-mostly reference. | When a driver is reversed or a finding corrected. Update [re/README.md](re/README.md)'s table too. |
 | **[kernel/](kernel/)** | The buildable artifacts (DTS, defconfig, drivers, scripts) and their docs: [kernel/README.md](kernel/README.md) (the build + the SoC-vs-H6 facts), [kernel/bringup-strategy.md](kernel/bringup-strategy.md) (the boot gates and debug plan), [kernel/heartbeat.md](kernel/heartbeat.md). | When an artifact is added or a kernel fact/decision changes. |
 
@@ -24,6 +25,8 @@ Reality lives in three places that must agree. After any session that builds, de
 3. The relevant **sub-doc** (a `re/` note, `kernel/README.md`, `bringup-strategy.md`) if the change is technical.
 
 A quick self-check when editing STATUS: does "What is working" match what actually compiles/boots today? Is the first unchecked item in "Next" really the next thing to do, not something already finished? If a `Phase:` line and a "Next" list disagree, the doc has drifted.
+
+**Record mistakes as they happen.** When a development-environment or process mistake is made and corrected (a toolchain gotcha, a wrong assumption, a wasted round-trip), add it to [LESSONS.md](LESSONS.md); when it is an on-device failure, add it to [TROUBLESHOOTING.md](TROUBLESHOOTING.md). Verify a build's real artifacts (grep the injection, check `.config`, check sizes) before reporting it done - exit 0 is not success.
 
 ## What goes where (so facts have one home)
 

@@ -49,9 +49,9 @@ So the device tree names the controllers as `allwinner,sun50iw15-ccu` / `-pinctr
 
 ## Status
 
-Phase B2 is done (DTS + defconfig + CCU/pinctrl drivers + build scripts, all verified to compile into the kernel), and the boot path (gate #0) is decided. The full reasoning is in **[bringup-strategy.md](bringup-strategy.md)**.
+Phase B2 is done (DTS + defconfig + CCU/pinctrl drivers + build scripts, all verified to compile into the kernel), and gate #0 (the boot handoff) is **passed on hardware**. Phase B3b is the current work. The full reasoning is in **[bringup-strategy.md](bringup-strategy.md)**.
 
-**Gate #0, the boot handoff, is decided: build 32-bit.** The stock kernel is AArch32 (verified by inspecting `boot_a`), the whole vendor stack runs the Cortex-A53 in 32-bit mode, and entering AArch64 on this SoC is unsolved (`sunxi-fel` reports `0x1911` unknown, `sunxi-fel uboot` fails `Unexpected SCTLR`, the RVBAR warm-reset to AArch64 hangs). So the kernel is built **32-bit (`ARCH=arm`)** to match the vendor chain (Branch 1); `build.sh` defaults to this. The `zImage` builds with our drivers in, and a gate-#0 GPIO heartbeat (red LED) is built into it ([heartbeat.md](heartbeat.md)) to confirm, on the device, that the vendor U-Boot enters our kernel. The loader is PhoenixSuit over FEL (`sunxi-fel` is unsupported on `0x1911`); a UART console is the real unlock. See [../STATUS.md](../STATUS.md).
+**Gate #0, the boot handoff: build 32-bit - passed (2026-10-28).** The stock kernel is AArch32 (verified by inspecting `boot_a`), the whole vendor stack runs the Cortex-A53 in 32-bit mode, and entering AArch64 on this SoC is unsolved (`sunxi-fel` reports `0x1911` unknown, `sunxi-fel uboot` fails `Unexpected SCTLR`, the RVBAR warm-reset to AArch64 hangs). So the kernel is built **32-bit (`ARCH=arm`)** to match the vendor chain (Branch 1); `build.sh` defaults to this. A GPIO beacon in the `zImage` decompressor ran on the device, confirming the vendor U-Boot enters our kernel. **B3b now walks the kernel to init with a ladder of checkpoint beacons and an authoritative appended device tree** ([heartbeat.md](heartbeat.md)). The loader is PhoenixSuit over FEL (`sunxi-fel` is unsupported on `0x1911`); a UART console is the real unlock. See [../STATUS.md](../STATUS.md).
 
 ## Planned contents
 

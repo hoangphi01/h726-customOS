@@ -1,0 +1,158 @@
+// SPDX-License-Identifier: (GPL-2.0+ OR MIT)
+/*
+ * BRING-UP device tree for the HY300 Ultra (H726 / sun50iw15p1).
+ *
+ * A deliberately minimal DT for the no-UART boot bring-up (Phase B3). It
+ * carries only what the kernel needs to reach init: the CPUs, the arch
+ * timer, the GIC, the memory node and PSCI, plus the CCU and pin
+ * controllers (so we can see whether they probe cleanly). EVERY peripheral
+ * that would pull a clock we have not modelled yet (uart, mmc, i2c, pwm,
+ * ths, iommu, gpu, the display stack) is left out, so nothing probe-defers
+ * or pokes hardware at a guessed offset during the bring-up.
+ *
+ * This is appended to the zImage (CONFIG_ARM_APPENDED_DTB) so it overrides
+ * whatever DTB the vendor U-Boot passes. The checkpoint beacon pokes the
+ * PIO directly, so it runs regardless of which drivers probe; the only
+ * things that MUST be right here are the CPU/MMU path, the memory node and
+ * the arch timer. Once the kernel boots this far, switch to the full
+ * sun50i-h726-hy300ultra.dts.
+ */
+
+/dts-v1/;
+
+/ {
+	model = "Magcubic HY300 Ultra Projector (bring-up)";
+	compatible = "magcubic,hy300ultra", "allwinner,sun50i-h726";
+
+	#address-cells = <2>;
+	#size-cells = <2>;
+
+	interrupt-parent = <&gic>;
+
+	chosen {
+		/* cmdline comes from CONFIG_CMDLINE (CMDLINE_FORCE). */
+	};
+
+	cpus {
+		#address-cells = <1>;
+		#size-cells = <0>;
+
+		cpu0: cpu@0 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			reg = <0>;
+			enable-method = "psci";
+		};
+
+		cpu1: cpu@1 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			reg = <1>;
+			enable-method = "psci";
+		};
+
+		cpu2: cpu@2 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			reg = <2>;
+			enable-method = "psci";
+		};
+
+		cpu3: cpu@3 {
+			compatible = "arm,cortex-a53";
+			device_type = "cpu";
+			reg = <3>;
+			enable-method = "psci";
+		};
+	};
+
+	osc24M: osc24M-clk {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <24000000>;
+		clock-output-names = "osc24M";
+	};
+
+	osc32k: osc32k-clk {
+		#clock-cells = <0>;
+		compatible = "fixed-clock";
+		clock-frequency = <32768>;
+		clock-output-names = "ext-osc32k";
+	};
+
+	psci {
+		compatible = "arm,psci-0.2";
+		method = "smc";
+	};
+
+	/* ~1 GB DRAM (base 0x40000000). Appended DTB is not fixed up by
+	 * U-Boot, so the size is hardcoded; the real device is ~1 GB. */
+	memory@40000000 {
+		device_type = "memory";
+		reg = <0x0 0x40000000 0x0 0x40000000>;
+	};
+
+	gic: interrupt-controller@3400000 {
+		compatible = "arm,gic-400";
+		reg = <0x0 0x03401000 0x0 0x1000>,
+		      <0x0 0x03402000 0x0 0x2000>,
+		      <0x0 0x03404000 0x0 0x2000>,
+		      <0x0 0x03406000 0x0 0x2000>;
+		interrupts = <1 9 0xf04>;
+		interrupt-controller;
+		#interrupt-cells = <3>;
+	};
+
+	timer {
+		compatible = "arm,armv8-timer";
+		/* Guard against an unset CNTFRQ: 24 MHz is the sunxi arch-timer
+		 * rate. If U-Boot already set CNTFRQ this is harmless. */
+		clock-frequency = <24000000>;
+		arm,no-tick-in-suspend;
+		interrupts = <1 13 0xf08>,
+			     <1 14 0xf08>,
+			     <1 11 0xf08>,
+			     <1 10 0xf08>;
+	};
+
+	soc: soc@0 {
+		compatible = "simple-bus";
+		#address-cells = <1>;
+		#size-cells = <1>;
+		ranges = <0x0 0x0 0x0 0x40000000>;
+
+		/* CCU: inputs trimmed to the always-available fixed clocks so
+		 * it cannot probe-defer on an unmodelled parent. */
+		ccu: clock@2002000 {
+			compatible = "allwinner,sun50iw15-ccu";
+			reg = <0x02002000 0x1000>;
+			clocks = <&osc24M>, <&osc32k>;
+			clock-names = "hosc", "losc";
+			#clock-cells = <1>;
+			#reset-cells = <1>;
+		};
+
+		pio: pinctrl@2000000 {
+			compatible = "allwinner,sun50iw15-pinctrl";
+			reg = <0x02000000 0x800>;
+			interrupts = <0 0x33 4>, <0 0x35 4>, <0 0x36 4>;
+			clocks = <&osc24M>, <&osc32k>;
+			clock-names = "hosc", "losc";
+			gpio-controller;
+			#gpio-cells = <3>;
+			interrupt-controller;
+			#interrupt-cells = <3>;
+		};
+
+		r_pio: pinctrl@7022000 {
+			compatible = "allwinner,sun50iw15-r-pinctrl";
+			reg = <0x07022000 0x400>;
+			clocks = <&osc24M>, <&osc32k>;
+			clock-names = "hosc", "losc";
+			gpio-controller;
+			#gpio-cells = <3>;
+			interrupt-controller;
+			#interrupt-cells = <3>;
+		};
+	};
+};

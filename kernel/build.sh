@@ -59,11 +59,33 @@ grep -q 'sun50i-h726-hy300ultra.dtb' "$DTSDIR/Makefile" || \
 	echo 'dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h726-hy300ultra.dtb' >> "$DTSDIR/Makefile"
 
 if [ "$TARGET" != "arm64" ] && [ "${HEARTBEAT:-0}" = "1" ]; then
-	echo ">> gate-#0 GPIO heartbeat (decompressor)"
+	echo ">> B3 checkpoint beacons (no-UART bring-up)"
+	# Shared blink macro, copied next to each .S that includes it.
 	CH=arch/arm/boot/compressed
-	cp "$HERE/heartbeat/heartbeat-h726.S" "$CH/"
-	sed -i '/heartbeat-h726.S/d' "$CH/head.S"
-	sed -i 's@^\( AR_CLASS(\tmrs\tr9, cpsr\t)\)@#include "heartbeat-h726.S"\n\1@' "$CH/head.S"
+	KH=arch/arm/kernel
+	cp "$HERE/checkpoint/h726-blink.h" "$CH/"
+	cp "$HERE/checkpoint/h726-blink.h" "$KH/"
+
+	# CP1 (1 tick): decompressor entry = gate #0. Free registers here,
+	# use r3-r6, preserve r0-r2 (kernel args). Also strip any legacy
+	# heartbeat-h726.S include from an earlier build in a reused tree.
+	sed -i '/h726-blink.h/d; /H726_BLINK/d; /heartbeat-h726.S/d' "$CH/head.S"
+	sed -i 's@^\( AR_CLASS(\tmrs\tr9, cpsr\t)\)@#include "h726-blink.h"\n\tH726_BLINK 1, r3, r4, r5, r6\n\1@' "$CH/head.S"
+
+	# CP2 (2 ticks): kernel-proper head.S, right after __create_page_tables
+	# (MMU still off, physical). Only r0/r3/r6/r7 are free there.
+	sed -i '/h726-blink.h/d; /H726_BLINK/d' "$KH/head.S"
+	sed -i 's@^\(\tbl\t__create_page_tables\)@\1\n#include "h726-blink.h"\n\tH726_BLINK 2, r3, r0, r6, r7@' "$KH/head.S"
+
+	# CP3 (3 ticks, early_initcall) + steady heartbeat (late_initcall), in C.
+	cp "$HERE/checkpoint/h726-checkpoint.c" "$KH/"
+	grep -q 'h726-checkpoint.o' "$KH/Makefile" || \
+		echo 'obj-y += h726-checkpoint.o' >> "$KH/Makefile"
+
+	# Minimal bring-up device tree (appended to the zImage below).
+	cp "$HERE/sun50i-h726-hy300ultra-bringup.dts" "$DTSDIR/"
+	grep -q 'sun50i-h726-hy300ultra-bringup.dtb' "$DTSDIR/Makefile" || \
+		echo 'dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h726-hy300ultra-bringup.dtb' >> "$DTSDIR/Makefile"
 fi
 
 echo ">> config"
@@ -75,6 +97,16 @@ else
 	./scripts/config --enable CONFIG_ARCH_SUNXI \
 		--enable CONFIG_SUNXI_CCU --enable CONFIG_PINCTRL_SUNXI \
 		--enable CONFIG_PSTORE --enable CONFIG_PSTORE_RAM
+	if [ "${HEARTBEAT:-0}" = "1" ]; then
+		# Our appended DTB must override the vendor U-Boot's DTB, and the
+		# cmdline must be deterministic (no console we can read anyway).
+		# nr_cpus=1 skips SMP secondary bring-up via PSCI/SMC. No earlycon:
+		# an 8250 earlycon on an unclocked UART can busy-wait on THRE.
+		./scripts/config --enable CONFIG_ARM_APPENDED_DTB \
+			--enable CONFIG_ARM_ATAG_DTB_COMPAT \
+			--enable CONFIG_CMDLINE_FORCE
+		./scripts/config --set-str CONFIG_CMDLINE "nr_cpus=1 loglevel=7"
+	fi
 fi
 make olddefconfig
 
@@ -85,6 +117,19 @@ else
 	make -j"$(nproc)" zImage dtbs
 fi
 
+if [ "$TARGET" != "arm64" ] && [ "${HEARTBEAT:-0}" = "1" ]; then
+	# Appended DTB: cat the bring-up DTB directly onto the zImage (no
+	# padding, so CONFIG_ARM_APPENDED_DTB detects it at _edata). This is
+	# the image to flash: it carries its own DT and overrides U-Boot's.
+	BRINGUP_DTB="$DTSDIR/sun50i-h726-hy300ultra-bringup.dtb"
+	cat "$IMG" "$BRINGUP_DTB" > "${IMG}-dtb"
+	echo ">> appended-DTB image: ${IMG}-dtb ($(stat -c%s "${IMG}-dtb") bytes = zImage + bring-up DTB)"
+fi
+
 echo
 echo ">> artifacts:"
 ls -la "$IMG" "$DTSDIR/sun50i-h726-hy300ultra.dtb"
+if [ "$TARGET" != "arm64" ] && [ "${HEARTBEAT:-0}" = "1" ]; then
+	ls -la "${IMG}-dtb" "$DTSDIR/sun50i-h726-hy300ultra-bringup.dtb"
+	echo ">> flash ${IMG}-dtb (NOT plain zImage) so the kernel uses our DTB."
+fi

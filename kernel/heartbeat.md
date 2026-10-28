@@ -1,56 +1,81 @@
-# The gate-#0 GPIO heartbeat
+# Checkpoint beacons: debugging the boot with no serial console
 
-A tiny GPIO tick inserted at the very start of the 32-bit `zImage` to answer one question with no serial console: **did the vendor U-Boot actually enter our mainline kernel and start executing it?** (See [bringup-strategy.md](bringup-strategy.md) for why this is gate #0.)
-
-## Result: gate #0 is PASSED (2026-10-28)
-
-This worked. Flashed to `boot_a` and powered on, the heartbeat ran on the real device, so the vendor U-Boot enters our mainline 32-bit kernel and the CPU executes it. **Branch 1 (32-bit) is validated on hardware.** The heartbeat has done its job; it is kept here for reference and for re-use if the early boot ever needs re-checking.
+How we see where a from-source kernel gets to on the H726 when there is no UART. The
+only output channel is a GPIO: a direct `writel` to the pin controller at `0x02000000`
+(always-on MMIO, needs no clock), which ticks the **focus motor** (phase PH13). Code
+dropped in at successive boot stages ticks the motor a distinct number of times; the
+highest count observed is the furthest the boot got. A steady repeating tick is the
+"it booted" signal. This supersedes the single gate-#0 heartbeat (which is now just the
+first beacon).
 
 ## !!! Safety: never drive the cooling fan !!!
 
-The first version blinked `fan-power-gpio` (PL7). It proved gate #0 (the fan cut out, so our code had run), but it turned the fan **off** while the vendor U-Boot splash was still being projected (light engine on), and after ~15 s the imager panel overheated (a dark bloom spread from the centre of the image). Never touch the fan, and never leave the device hung with the light engine on and no cooling. The signal is now the **focus motor**, which has no thermal role.
+Every beacon ticks the **focus motor (PH13)** only, never the cooling fan (PL7 / PWM0).
+The first gate-#0 test blinked the fan (PL7) off; with the U-Boot splash still projecting
+(light engine on) the imager panel overheated in ~15 s (a dark bloom from the centre).
+The motor has no thermal role. Note the kernel proper never drives cooling either: our
+device tree keeps `pwm-fan` disabled, so the fan stays in the state U-Boot left it (on)
+for the whole run, which is thermally safe even if the kernel hangs. See
+[bringup-strategy.md](bringup-strategy.md).
 
-## What it does
+## The ladder (Build A)
 
-[heartbeat/heartbeat-h726.S](heartbeat/heartbeat-h726.S) is `#include`d into `arch/arm/boot/compressed/head.S`, right where the decompressor begins, **before any clock or CCU init**. The MMU is off there, so it pokes the GPIO registers directly, needing no clock:
+| Ticks | Where | Proves |
+|---|---|---|
+| 1 | decompressor entry (`arch/arm/boot/compressed/head.S`) | **Gate #0:** U-Boot entered our kernel (already passed 2026-10-28). |
+| 2 | kernel proper, after `__create_page_tables` (`arch/arm/kernel/head.S`, MMU still off) | The decompressor handed off into `vmlinux`. |
+| 3 | `early_initcall` (C) | Reached the init thread: `setup_arch` + memory + scheduler + timers are up. |
+| steady ~1 Hz, forever | `late_initcall` kthread | **Kernel fully alive:** the scheduler and timekeeping are running. |
 
-- **Ticks the focus motor (phase 0 = PH13) eight times.** Main PIO `0x02000000`, PH bank base `0x020000FC`, `CFG1` at `+0x04` (set PH13 to output), `DAT` at `+0x10` bit 13. An audible click / small lens move each tick.
+So: count the ticks, then watch for the steady heartbeat. You saw bursts 1,2,3 then nothing
+means it hung between reaching init and late init; a steady heartbeat means success. Counts
+2 and 3 are close by ear, so the two unambiguous reads are "did it get past 1 (gate #0)" and
+"did it reach the steady heartbeat".
 
-It uses only `r3`-`r6` and preserves `r0`-`r2` (the U-Boot machine id / DTB pointer), so it does not disturb the boot. The pin numbers are confirmed from the running device's GPIO map (`fan-power-gpio` on PL7, the four `motor-gpio-phaseN` on PH).
+## How it is built
+
+- [checkpoint/h726-blink.h](checkpoint/h726-blink.h): an assembly macro `H726_BLINK n, rb, rt, rc, rd`
+  that ticks PH13 `n` times using only the four registers it is handed, so it drops into both
+  the decompressor (registers free) and kernel-proper `head.S` (only `r0/r3/r6/r7` free). It uses
+  only `movw/movt` immediates and PC-relative branches, so it is position-independent with the MMU
+  on or off.
+- [checkpoint/h726-checkpoint.c](checkpoint/h726-checkpoint.c): the C side. An `early_initcall`
+  ticks 3 times; a `late_initcall` starts a kthread that ticks ~1 Hz forever. It `ioremap`s the PIO
+  and pokes PH13 directly (not through the gpio/pinctrl API) so it works before any driver probes.
+- [build.sh](build.sh) injects CP1/CP2 into the two `head.S` files (idempotently) and builds the
+  C file in, under `HEARTBEAT=1`.
+
+The register math: main PIO `0x02000000`; PH = bank 7, base `0x02000000 + 7*0x24 = 0x020000FC`;
+`CFG1` (pins 8-15) at `+0x04`, PH13 mux = bits [23:20] (set `0x1` = output); `DAT` at `+0x10`
+bit 13.
 
 ## Build it
 
 ```sh
 HEARTBEAT=1 bash kernel/build.sh
-# -> arch/arm/boot/zImage (with the heartbeat built into the decompressor)
+# -> arch/arm/boot/zImage-dtb  (zImage + appended bring-up DTB; FLASH THIS, not plain zImage)
 ```
 
-(Verified to compile into the `zImage`.)
+`HEARTBEAT=1` also turns on `CONFIG_ARM_APPENDED_DTB` and appends our minimal
+[sun50i-h726-hy300ultra-bringup.dts](sun50i-h726-hy300ultra-bringup.dts), so the kernel uses our
+device tree and ignores whatever the vendor U-Boot passes. The cmdline is forced to `nr_cpus=1`
+(skip SMP secondary bring-up via PSCI/SMC). Verified: the whole thing compiles clean and the
+`zImage-dtb` (~11.8 MB) fits the stock `boot_a` kernel slot (~38.6 MB) with room to spare.
 
 ## Flash and observe
 
-Pack the `zImage` into the `boot_a` partition and flash it the same proven way the device was rooted: byte-copy the stock IMAGEWTY, replace only the `boot_a` payload with the new `zImage` (keep the ramdisk), recompute the per-partition `add_sum` verify-file, and flash via PhoenixSuit over FEL (`adb reboot efex`). Keep the stock image to reflash. Then power on and watch the red LED.
+See [flash/README.md](flash/README.md). In short: pack `zImage-dtb` into `boot_a` and flash
+(by `dd` if the device is rooted, or a PhoenixSuit boot-only minimal-diff image if not), power on,
+count the motor ticks, and watch for the steady heartbeat.
 
-## Reading the result
+## If a stage is silent: next build
 
-| Observation | Meaning |
-|---|---|
-| Red LED blinks ~5 times at power-on | **Gate #0 passed.** U-Boot entered the 32-bit kernel and the CPU is running it. Branch 1 (32-bit) is the right path, and the next job is the CCU offsets. |
-| No blink (and the device does not boot stock either) | Either the guess is wrong (see below) or U-Boot did not enter the kernel. Reflash stock, then retarget and retry. |
-| Device boots as before / LED behaves normally | The kernel was probably not entered (U-Boot fell through to its normal path). Check the boot partition packing. |
-
-Nothing here can brick the device: FEL stays available and the stock IMAGEWTY reflashes over PhoenixSuit; the reserve/calibration partition is skipped.
-
-## If it does not blink: retarget
-
-The PL0 red LED is a best guess from the HY300 sibling (the H713), so the pin may differ on this unit. In `heartbeat-h726.S`, change the target:
-
-- **Different LED / pin on the R_PIO (PL) bank:** keep the base `0x07022000`, change the `CFG0` nibble and the `DAT` bit to the pin number (pin N uses `CFG(N/8)` nibble `(N%8)*4` and `DAT` bit N).
-- **A pin on the main PIO** (banks PA-PH, e.g. a motor phase on PH): base `0x02000000`, bank pitch `0x24` (PH = bank 7 -> `0x020000FC`), same `CFG`/`DAT` layout.
-- The fan is loud and drowns out the focus motor, so an LED is the clearest indicator on this unit.
-
-The loop delay (`0x00300000`) can be made longer or shorter to change the blink speed.
+If it hangs between two beacons, the next build adds a finer beacon in that gap (e.g. inside
+`setup_arch` after `early_ioremap_init()`, the earliest a C beacon can `ioremap`). We batch as many
+beacons as possible into each build because each on-device flash cycle is costly.
 
 ## The real unlock
 
-A 3.3V USB-UART on the debug pads makes this whole file unnecessary: with `earlycon`, the kernel prints from its assembly head, so gate #0 and every later stage are visible as text, not guessed from a blink.
+A 3.3V USB-UART on the debug pads makes all of this unnecessary: with `earlycon` the kernel prints
+from its assembly head, so every stage is text, not a guessed tick count. Until then, beacons are
+the channel.

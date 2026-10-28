@@ -11,9 +11,9 @@ Built and verified (compile/build level; nothing boots yet, see gate #0 in the P
 
 - **Reverse-engineering (B1):** 9 register-map notes in [re/](re/) covering the whole display + keystone stack (`ksc`, `tvtop`, `vs-display`, `vs-osd`, `tvpanel` = TCON/LVDS/DSI/DE, panels, `sunxi-ve`) plus the live-read clock tree ([re/ccu-sun50iw15.md](re/ccu-sun50iw15.md)).
 - **Kernel base (B2):** [kernel/](kernel/) has our board device tree, `h726_defconfig`, a self-contained `build.sh`, and real sun50iw15 **CCU + pinctrl drivers** (sunxi-ng, A523-generation). Verified: they compile into both a 32-bit `zImage` (~11 MB) and a 64-bit `Image` (~41 MB), and the DTB builds (9276 bytes).
-- **Boot path (gate #0 / B3):** the kernel is built 32-bit (`ARCH=arm`) to match the vendor AArch32 chain, and a gate-#0 **GPIO heartbeat** (red LED x5) is `#include`d into the decompressor and compiles into the `zImage` ([kernel/heartbeat.md](kernel/heartbeat.md)). Ready to flash and observe on the device.
+- **Boot path (gate #0 / B3):** the kernel is built 32-bit (`ARCH=arm`) to match the vendor AArch32 chain; gate #0 passed on hardware. Phase B3b **Build A** is built and compiles clean: a ladder of GPIO motor **checkpoint beacons** (CP1 decompressor / CP2 post-`__create_page_tables` / CP3 `early_initcall` / steady `late_initcall` heartbeat) across `head.S` and a built-in C file, an **appended authoritative device tree** (`CONFIG_ARM_APPENDED_DTB` + a minimal bring-up DTS, `nr_cpus=1`), and a de-risked CCU. Output `zImage-dtb` (~11.8 MB) fits the stock `boot_a` slot (~38.6 MB). See [kernel/heartbeat.md](kernel/heartbeat.md). Ready to flash and read the beacons.
 
-Not booting yet: the CCU register offsets are an A523 hypothesis, and gate #0 (does the vendor U-Boot enter our kernel) is unconfirmed until the heartbeat is flashed. The Phase-0 recon below is historical background.
+Not fully booting yet: gate #0 is passed (the vendor U-Boot enters our kernel), but the CCU register offsets are still an A523 hypothesis and the kernel has not yet been walked to init on hardware - that is Phase B3b (Build A, above, is built and ready to flash and read via the checkpoint beacons). The Phase-0 recon below is historical background.
 
 ## Phase 0 recon: results
 
@@ -155,7 +155,15 @@ The H713 sibling already flashed a prebuilt PHH Treble ARM32 GSI and documented 
 - [x] **Phase B2: a buildable kernel base.** Board DTS, `h726_defconfig`, `build.sh`, and real sun50iw15 CCU + pinctrl drivers (sunxi-ng, A523-generation, from the live clock tree in [re/ccu-sun50iw15.md](re/ccu-sun50iw15.md)). All compile into the kernel.
 - [x] **Gate #0 decided: build 32-bit (`ARCH=arm`).** The stock kernel is AArch32 and entering AArch64 on this SoC is unsolved, so an arm64 Image cannot be entered by the vendor chain. The 32-bit `zImage` builds with our drivers in; see [kernel/bringup-strategy.md](kernel/bringup-strategy.md).
 - [x] **Gate #0 CONFIRMED PASSED on hardware (2026-10-28).** A GPIO heartbeat built into the `zImage` decompressor was flashed to `boot_a` (by `dd` on the rooted device, [kernel/flash/README.md](kernel/flash/README.md)) and ran: the vendor U-Boot entered our mainline 32-bit kernel and the CPU executed it. **Branch 1 (32-bit) is validated.** Caveat and safety lesson: the heartbeat drove the cooling fan off, and with the U-Boot splash still projecting (light engine on) the imager panel overheated after ~15 s (a dark bloom). **Never drive the fan; use the focus motor (no thermal role).** The committed heartbeat is retargeted to the motor.
-- [ ] **Phase B3b (current): hardware-correct the CCU/pinctrl register offsets** (A523-hypothesis today) so the kernel boots past the heartbeat into early init. A **UART console** is now the key accelerator: gate #0 is passed, so `earlycon` would show exactly where the CCU hangs.
+- [~] **Phase B3b (current): walk the kernel to init with checkpoint beacons (no UART).** Build A is
+  built and compiles clean: a ladder of GPIO motor beacons (1 tick = decompressor/gate #0, 2 = entered
+  `vmlinux` post-`__create_page_tables`, 3 = reached the init thread, steady ~1 Hz = kernel fully alive),
+  an authoritative appended device tree (`CONFIG_ARM_APPENDED_DTB` + a minimal bring-up DTS that overrides
+  U-Boot's), `nr_cpus=1`, and a de-risked CCU (no `CLK_IS_CRITICAL`). The `zImage-dtb` (~11.8 MB) fits the
+  stock `boot_a` slot (~38.6 MB). See [kernel/heartbeat.md](kernel/heartbeat.md) and
+  [kernel/bringup-strategy.md](kernel/bringup-strategy.md). Next: flash Build A and read the beacons, then
+  hardware-correct the CCU/pinctrl offsets wherever a beacon shows a clock-dependent stall. A UART console
+  would still be the key accelerator (`earlycon` = text instead of tick counts).
 - [ ] Phase B4: driver bring-up loop by dependency order (see [re/README.md](re/README.md)), reusing the Mali / CedarX / AIC8800 blobs.
 
 **Track A (deferred fallback), build the clean userspace:**
