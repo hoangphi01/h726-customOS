@@ -9,7 +9,7 @@
 ![SoC](https://img.shields.io/badge/SoC-Allwinner%20H726%20(sun50iw15)-blue)
 ![FEL ID](https://img.shields.io/badge/FEL%20ID-0x1911-informational)
 ![Android](https://img.shields.io/badge/base-Android%2014-green)
-![Status](https://img.shields.io/badge/status-planning-orange)
+![Status](https://img.shields.io/badge/status-kernel%20bring--up%20(B2)-orange)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Affiliation](https://img.shields.io/badge/affiliation-none-lightgrey)
 
@@ -22,6 +22,21 @@
 An effort to build a clean custom OS for the Magcubic / Gojodoq **HY300 Ultra** projector, powered by the **Allwinner H726 (`sun50iw15p1`, FEL id `0x1911`)**: Android 14, kernel 5.15, 32-bit `armeabi-v7a`, about 1 GB RAM, Mali-G31, AIC8800 Wi-Fi, 720p, DRM/KMS display with no MIPS co-processor.
 
 The stock firmware is a white-label clone carrying the BadBox malware family and a heavy vendor framework. This project replaces its userspace, and if feasible its kernel, with a clean build.
+
+## Progress
+
+Where this is, most recent first. Track B (a from-source kernel) is the primary focus; Track A (a LineageOS GSI) is a deferred fallback. Full detail in [STATUS.md](STATUS.md).
+
+| Phase | What | State |
+|---|---|---|
+| Phase 0 | Recon: Treble confirmed, device facts, the two-track verdict | Done |
+| B1 | Reverse-engineer the display and keystone drivers into register maps ([re/](re/)) | Done, 8 notes |
+| B2 | A buildable kernel base: board device tree, `defconfig`, build script; builds mainline 6.16.7 into a kernel `Image` + DTB ([kernel/](kernel/)) | Done, compiles and builds |
+| B2 | sun50iw15 CCU + pinctrl drivers | In progress, core subset compiles |
+| B3 | Boot bring-up (blind via pstore / USB dmesg; no UART yet) | Not started |
+| Track A | LineageOS GSI (deferred fallback) | Not started |
+
+**Builds today:** the device tree, the config, and our sun50iw15 CCU and pinctrl drivers, all into a mainline 6.16.7 kernel `Image` via `kernel/build.sh`. **Not working yet:** booting, which needs the CCU/pinctrl register offsets confirmed on hardware and, ideally, a serial console. The reverse-engineering groundwork (the display/keystone register maps) is what makes the driver work possible.
 
 ## 2. Why
 
@@ -71,6 +86,21 @@ Experimental. Flashing an Allwinner device can permanently brick it. For the **H
 Dự án dựng một **custom OS sạch** cho máy chiếu **HY300 Ultra** (Magcubic / Gojodoq) chạy **Allwinner H726 (`sun50iw15p1`, FEL `0x1911`)**: Android 14, kernel 5.15, 32-bit `armeabi-v7a`, khoảng 1 GB RAM, Mali-G31, Wi-Fi AIC8800, 720p, hiển thị DRM/KMS không có co-processor MIPS.
 
 Firmware gốc là bản clone white-label dính họ malware BadBox và framework hãng nặng nề. Dự án này thay userspace, và nếu khả thi là cả kernel, bằng một bản build sạch.
+
+## Tiến độ
+
+Đang ở đâu, mới nhất lên đầu. Track B (kernel từ source) là trọng tâm; Track A (LineageOS GSI) là fallback hoãn lại. Chi tiết ở [STATUS.md](STATUS.md).
+
+| Giai đoạn | Việc | Trạng thái |
+|---|---|---|
+| Phase 0 | Recon: xác nhận Treble, thông số máy, chốt hai track | Xong |
+| B1 | Dịch ngược driver display + keystone thành register map ([re/](re/)) | Xong, 8 note |
+| B2 | Nền kernel build-được: device tree, `defconfig`, build script; build mainline 6.16.7 ra kernel `Image` + DTB ([kernel/](kernel/)) | Xong, compile + build |
+| B2 | Driver CCU + pinctrl sun50iw15 | Đang làm, core subset compile |
+| B3 | Bring-up boot (mù qua pstore / USB dmesg; chưa có UART) | Chưa bắt đầu |
+| Track A | LineageOS GSI (fallback hoãn) | Chưa bắt đầu |
+
+**Build được hiện tại:** device tree, config, và driver CCU + pinctrl sun50iw15 của ta, tất cả biên dịch vào kernel `Image` mainline 6.16.7 qua `kernel/build.sh`. **Chưa chạy:** boot, cần xác nhận offset register CCU/pinctrl trên phần cứng và lý tưởng là có serial console. Phần RE nền (register map display/keystone) chính là cái làm việc viết driver trở nên khả thi.
 
 ## 2. Vì sao
 

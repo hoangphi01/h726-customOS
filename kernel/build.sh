@@ -29,6 +29,21 @@ cd "linux-$KVER"
 
 export ARCH=arm64 CROSS_COMPILE=aarch64-linux-gnu-
 
+echo ">> sun50iw15 CCU + pinctrl drivers"
+# dt-bindings headers (referenced by the device tree)
+install -m644 "$HERE/ccu/sun50iw15-ccu.h"       include/dt-bindings/clock/sun50iw15-ccu.h
+install -m644 "$HERE/ccu/sun50iw15-ccu-reset.h" include/dt-bindings/reset/sun50iw15-ccu.h
+# CCU driver
+cp "$HERE/ccu/ccu-sun50iw15.c"         drivers/clk/sunxi-ng/
+cp "$HERE/ccu/sun50iw15-ccu.h"         drivers/clk/sunxi-ng/
+cp "$HERE/ccu/sun50iw15-ccu-reset.h"   drivers/clk/sunxi-ng/
+grep -q 'ccu-sun50iw15.o' drivers/clk/sunxi-ng/Makefile || \
+	echo 'obj-$(CONFIG_SUNXI_CCU) += ccu-sun50iw15.o' >> drivers/clk/sunxi-ng/Makefile
+# pinctrl driver
+cp "$HERE/pinctrl/pinctrl-sun50iw15.c" drivers/pinctrl/sunxi/
+grep -q 'pinctrl-sun50iw15.o' drivers/pinctrl/sunxi/Makefile || \
+	echo 'obj-$(CONFIG_PINCTRL_SUNXI) += pinctrl-sun50iw15.o' >> drivers/pinctrl/sunxi/Makefile
+
 echo ">> device tree"
 cp "$HERE/sun50i-h726-hy300ultra.dts" arch/arm64/boot/dts/allwinner/
 grep -q 'sun50i-h726-hy300ultra.dtb' arch/arm64/boot/dts/allwinner/Makefile || \

@@ -18,11 +18,11 @@ $C --enable CONFIG_DRM_PANFROST
 $C --enable CONFIG_IOMMU_SUPPORT
 $C --enable CONFIG_SUN50I_IOMMU
 
-# Clocks / pinctrl. NOTE: mainline has no sun50iw15 CCU/pinctrl yet; the
-# H6 drivers are enabled as a starting point but will not fully bind
-# (see kernel/README.md). This is the #1 bring-up task.
-$C --enable CONFIG_PINCTRL_SUN50I_H6
-$C --enable CONFIG_PINCTRL_SUN50I_H6_R
+# Clocks / pinctrl: our sun50iw15 drivers (kernel/ccu, kernel/pinctrl)
+# build under these framework symbols. The CCU and pinctrl are the core
+# bring-up work; this pass compiles them in (see kernel/README.md).
+$C --enable CONFIG_SUNXI_CCU
+$C --enable CONFIG_PINCTRL_SUNXI
 
 # Storage
 $C --enable CONFIG_MMC
