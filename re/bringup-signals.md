@@ -115,10 +115,15 @@ multi-cycle pattern never completes before the reset.)
 ### The cutoff is EXTERNAL, confirmed by a spin test (2026-10-29)
 
 A diagnostic kernel did one GPIO blip and then `b .` (spin forever) in the decompressor, **without
-touching the fan** - so if the SoC were simply left alone, the device would stay on (U-Boot keeps the
-fan running, splash frozen, blue LED). Instead it went to **RED standby at ~2 s anyway**. So the ~2 s
-cutoff is **not** our kernel crashing or hanging - a spinning SoC is cut just the same. It is an
-**external agent**, almost certainly the **watchdog**: a watchdog reset at ~2 s fits every
+touching the fan**, and went to **RED standby at ~2 s**. **Caveat (be honest):** that spin kernel used
+the *silent* PA-beep as its blip, so we have no independent confirmation it ran - "red at ~2 s" could
+be our spinning kernel being cut, OR U-Boot finishing with `boot_b` and the MCU timing out. The spin
+test must be **re-run with the FAN blip** (`H726_SPINTEST`, which stutters PL7 audibly first): fan
+stutter = our kernel definitely ran, then stay-on vs red answers external-vs-crash. That is the #0 test
+next session. What *is* confirmed is that **`boot_b` runs our kernel** (a fan "stutter" was heard on an
+earlier fan-beacon build - U-Boot never toggles the fan - and `misc` slot_b tries decremented 1->0), so
+the slot is not locked. The external-cutoff reading below is the **leading hypothesis**, not yet proven:
+the **watchdog**. A watchdog reset at ~2 s fits every
 observation, including why the very first gate-#0 test (flashed to the *active* slot `boot_a`) seemed
 to run ~15 s - it was **reset-looping** (boot_a is always bootable, so U-Boot kept re-entering it, the
 MCU saw the SoC "active", and the fan toggled each loop until the panel overheated), whereas a
