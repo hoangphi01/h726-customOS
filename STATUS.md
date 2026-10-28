@@ -2,7 +2,7 @@
 
 Living status of the project. Updated as reality changes. See [PLAN.md](PLAN.md) for the roadmap.
 
-**Phase:** Phase 0 done. **Track B is the primary focus; Track A is a deferred fallback.** Starting Phase B1: deep-RE the new drivers (Ghidra / objdump). No UART yet, so Track B debugs blind (pstore + USB dmesg dump + GPIO heartbeat).
+**Phase:** **Track B is the primary focus; Track A is a deferred fallback.** Phase B1 done (the new-driver register maps are in `re/`; the whole display stack is in modules, no `vmlinux` RE needed). Next: Phase B2 (buildable kernel base: mainline linux-sunxi + defconfig from `config.gz` + DTS to source + sun50iw15 CCU/pinctrl/DRAM). No UART yet, so Track B debugs blind (pstore + USB dmesg dump + GPIO heartbeat).
 **Last updated:** 2026-10-28.
 
 ## What is working
@@ -148,7 +148,7 @@ The H713 sibling already flashed a prebuilt PHH Treble ARM32 GSI and documented 
 - [x] `dtc` the extracted DTB to `.dts` (done; 3196 lines, driver surface classified above).
 - [x] Pull the H713/H310 anchors (YuujiLab / probonopd): confirmed research + tooling, not kernel trees. Kernel base is mainline linux-sunxi + any upstream sun50iw12 bring-up, guided by our DTS/config.
 - [x] Stage the new-driver `.ko` locally and split "reuse" from "reverse" (65 second-stage `.ko` in `/vendor` + `/vendor_dlkm`; the first-stage display stack from the `vendor_boot` ramdisk); build string pinned.
-- [~] **Phase B1 (in progress): deep-RE the new drivers** into `re/` register maps (see [re/README.md](re/README.md)). Done: `sunxi_ksc` (register file, LUT warp), `sunxi_tvtop` (clocks/resets/ADC/gates), `vs-display` (five register windows, conduit model), `vs-osd` (fbdev + CRTC/plane), the LVDS panel glue. Remaining: extract `tcon`/`lvds0` from `vmlinux`, then `sunxi-ve` (reuse the CedarX blobs). Method: ARM objdump anchored on the DTS reg bases (Ghidra 12.2 set up but rejects the available JDK; revisit for the userspace pixel math).
+- [x] **Phase B1 done: deep-RE the new drivers** into `re/` register maps (see [re/README.md](re/README.md)). Mapped: `sunxi_ksc` (LUT warp register file), `sunxi_tvtop` (clocks/resets/ADC/gates), `vs-display` (five register windows, conduit model), `vs-osd` (fbdev + CRTC/plane), `tvpanel` (the DE top + TCON + LVDS + DSI, all in one module with the routing/mux + PLL register map), the LVDS panel glue, and `sunxi-ve` (Cedar conduit, reuse the CedarX blobs). Key result from [re/kallsyms-map.md](re/kallsyms-map.md): the kernel is not stripped and every vendor display driver is a module, so no `vmlinux` extraction was needed; the only built-in display piece is the CCU clock tree (a B2 item). Method: ARM objdump anchored on the DTS reg bases (Ghidra 12.2 set up but rejects the available JDK; revisit for the userspace pixel math).
 - [ ] Phase B2: buildable kernel base (mainline linux-sunxi, defconfig from `config.gz`, DTS to source, sun50iw15 CCU/pinctrl/DRAM from sun50iw12).
 - [ ] Phase B3: boot.img + the no-serial debug harness (pstore/ramoops, USB dmesg dump, GPIO heartbeat); flash to `boot_a`, keep stock to unbrick.
 - [ ] Phase B4: driver bring-up loop by dependency order, reusing the Mali / CedarX / AIC8800 blobs.
