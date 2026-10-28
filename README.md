@@ -53,6 +53,16 @@ Track B (a from-source kernel) is the primary focus; Track A (a LineageOS GSI) i
 | B4 | Driver bring-up loop (display, keystone, Wi-Fi) from the B1 maps | Not started |
 | Track A | LineageOS GSI (deferred fallback) | Not started |
 
+## Hard-won lessons (read before flashing)
+
+Full detail and a troubleshooting table in **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**.
+
+> [!CAUTION]
+> **Never drive the cooling fan in a bring-up test, and never leave a hung kernel sitting.** The light engine is on during the U-Boot splash; a test that turned the fan off while the kernel hung overheated the imager panel in ~15 s (a dark bloom from the centre; it recovered once cool). Use the focus motor or a UART as the signal, and cut power the instant the fan stops.
+
+> [!WARNING]
+> **If a test kernel hangs, `adb reboot efex` cannot reach FEL - use the hardware button.** The FEL entry on this unit is a **recessed FLASH button next to the HDMI port**: hold it with a paperclip while applying power (the PC then shows `1f3a:efe8`). Vol+ on the IR remote does **not** work. Know where this button is before you flash.
+
 ## 4. Why
 
 - **Smooth on 1 GB.** The stock vendor framework is bloated; a lean kernel and userspace are the only way this device runs well on 1 GB.
@@ -103,6 +113,7 @@ Everything compiles and builds; nothing boots yet (see below).
 - **[PLAN.md](PLAN.md)** the roadmap, tracks and phases.
 - **[RULE.md](RULE.md)** how the project is run and written.
 - **[DOCS_GUIDE.md](DOCS_GUIDE.md)** the documentation index and update discipline.
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** hard-won failures and how to recover (thermal, FEL button, verify, flashing).
 - **[re/](re/)** the reverse-engineering notes (one per driver, plus the clock tree).
 - **[kernel/](kernel/)** the buildable artifacts, [the build + SoC facts](kernel/README.md), [the bring-up strategy](kernel/bringup-strategy.md), and [the heartbeat](kernel/heartbeat.md).
 
@@ -158,6 +169,16 @@ Track B (kernel từ source) là trọng tâm; Track A (LineageOS GSI) là fallb
 | B4 | Vòng bring-up driver (display, keystone, Wi-Fi) từ map B1 | Chưa bắt đầu |
 | Track A | LineageOS GSI (fallback hoãn) | Chưa bắt đầu |
 
+## Bài học xương máu (đọc trước khi flash)
+
+Chi tiết + bảng troubleshoot ở **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**.
+
+> [!CAUTION]
+> **Không bao giờ đụng vào QUẠT làm mát trong test kernel, và không để kernel treo lâu.** Đèn chiếu BẬT lúc splash U-Boot; một lần test tắt quạt trong khi kernel treo đã làm **panel quá nhiệt trong ~15 giây** (vệt đen loang từ tâm; nguội thì hồi). Dùng motor focus hoặc UART làm tín hiệu, và NGẮT ĐIỆN ngay khi quạt ngừng.
+
+> [!WARNING]
+> **Kernel test treo thì `adb reboot efex` KHÔNG vào được FEL - phải dùng nút cứng.** FEL của máy này là **nút FLASH ẩn cạnh cổng HDMI**: lấy kẹp giấy ấn giữ **trong lúc cấp nguồn** (PC hiện `1f3a:efe8`). **Vol+ trên remote IR KHÔNG ăn.** Nhớ vị trí nút này trước khi flash.
+
 ## 4. Vì sao
 
 - **Mượt trên 1 GB.** Framework hãng quá nặng; chỉ kernel + userspace tinh gọn mới chạy tốt trên 1 GB.
@@ -208,6 +229,7 @@ Tất cả compile + build được; chưa boot (xem dưới).
 - **[PLAN.md](PLAN.md)** lộ trình, track và phase.
 - **[RULE.md](RULE.md)** cách vận hành và viết.
 - **[DOCS_GUIDE.md](DOCS_GUIDE.md)** chỉ mục tài liệu và kỷ luật cập nhật.
+- **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** sự cố thực tế + cách khôi phục (nhiệt, nút FEL, verify, flash).
 - **[re/](re/)** các note dịch ngược (mỗi driver một note, kèm cây clock).
 - **[kernel/](kernel/)** artifact build-được, [build + fact SoC](kernel/README.md), [chiến lược bring-up](kernel/bringup-strategy.md), [heartbeat](kernel/heartbeat.md).
 

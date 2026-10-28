@@ -11,6 +11,7 @@ The map of this repo's documentation: what each file is for, and when to update 
 | **[PLAN.md](PLAN.md)** | The **roadmap**: tracks, phases, approach, open questions. The intended path, not the current position. | When the direction changes (a track reprioritised, a phase reshaped, a fork decided). Not for day-to-day progress. |
 | **[RULE.md](RULE.md)** | How this project is run and written (commit rules, no redistribution, tone, redaction). | Rarely, when a working rule changes. |
 | **[DOCS_GUIDE.md](DOCS_GUIDE.md)** | This file: the doc index and update discipline. | When a document is added, removed, or repurposed. |
+| **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)** | Hard-won failures and recoveries (thermal, FEL button, PhoenixSuit verify, flashing). | When a new failure mode is hit and solved. |
 | **[re/](re/)** | Reverse-engineering notes, one per driver, plus [re/README.md](re/README.md) (the index) and the clock tree. Append-mostly reference. | When a driver is reversed or a finding corrected. Update [re/README.md](re/README.md)'s table too. |
 | **[kernel/](kernel/)** | The buildable artifacts (DTS, defconfig, drivers, scripts) and their docs: [kernel/README.md](kernel/README.md) (the build + the SoC-vs-H6 facts), [kernel/bringup-strategy.md](kernel/bringup-strategy.md) (the boot gates and debug plan), [kernel/heartbeat.md](kernel/heartbeat.md). | When an artifact is added or a kernel fact/decision changes. |
 
