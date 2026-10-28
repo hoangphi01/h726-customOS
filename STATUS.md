@@ -2,7 +2,7 @@
 
 Living status of the project. Updated as reality changes. See [PLAN.md](PLAN.md) for the roadmap.
 
-**Phase:** Phase 0 (recon) complete. Track B mining started (DTB decompiled, driver surface classified). Track A (build a clean GSI) and Track B (independent BSP from the mine) run in parallel.
+**Phase:** Phase 0 done. **Track B is the primary focus; Track A is a deferred fallback.** Starting Phase B1: deep-RE the new drivers (Ghidra / objdump). No UART yet, so Track B debugs blind (pstore + USB dmesg dump + GPIO heartbeat).
 **Last updated:** 2026-10-28.
 
 ## What is working
@@ -117,10 +117,10 @@ So Track B's kernel base is mainline linux-sunxi plus whatever sun50iw12 (H713) 
 
 ## Verdict
 
-- **Track A (clean userspace) is reachable:** build a 32-bit LineageOS 21 (arm) GSI from source, flash it to `system_a`, keep the vendor kernel, `/vendor` and `/product`. Clean userspace, vendor kernel.
-- **Track B (clean kernel) is an independent BSP, not a blocked SDK hunt.** There is no public `sun50iw15` factory BSP and there does not need to be. The gold mine holds the full hardware spec: the DTS above is the authoritative map, `config.gz` is the defconfig base, and the vendor `.ko`/`.so` are the closed pieces to reuse or reverse. The work is to extend the H713 (`sun50iw12`) mainline bring-up to sun50iw15 for the standard blocks, and to write or RE the short list of genuinely new drivers (the `vs,*` display pipeline, `tvtop`/`tvdisp_top`, `tcon`/`lvds0`, the `z20hd720m` panel, the `ksc100` keystone). Real kernel bring-up, but bounded and seeded, exactly the linux-sunxi method.
+- **Track B (clean kernel) is the primary track: an independent BSP, not a blocked SDK hunt.** There is no public `sun50iw15` factory BSP and there does not need to be. The gold mine holds the full hardware spec: the DTS above is the authoritative map, `config.gz` is the defconfig base, and the vendor `.ko`/`.so` are the closed pieces to reuse or reverse. The work is to extend the H713 (`sun50iw12`) mainline bring-up to sun50iw15 for the standard blocks, and to write or RE the short list of genuinely new drivers (the `vs,*` display pipeline, `tvtop`/`tvdisp_top`, `tcon`/`lvds0`, the `z20hd720m` panel, the `ksc100` keystone). Real kernel bring-up, but bounded and seeded, exactly the linux-sunxi method. It is first because it is on the critical path (even Track A needs its DRM/KMS to be stable) and because the mine is already mined.
+- **Track A (clean userspace) is a deferred fallback:** build a 32-bit LineageOS 21 (arm) GSI from source, flash it to `system_a`, keep the vendor kernel, `/vendor` and `/product`. Clean userspace, vendor kernel. Reachable and needs no UART, but it inherits the vendor HWC frame-commit quirk (below) until Track B lands. Started only if Track B stalls on hardware access, or a usable daily-driver is wanted sooner.
 
-Both run in parallel: A delivers a usable clean-userspace build; B builds a trustworthy kernel from the mine.
+**No UART yet**, so Track B debugs blind in software (pstore / ramoops, a ramdisk USB `dmesg` dump, a GPIO LED heartbeat), upgrading to live serial if a 3.3V USB-UART adapter is obtained and the pads are reachable. See PLAN section 3.
 
 ## Track A: blockers inherited (and not) from the H713 GSI attempt
 
@@ -142,19 +142,22 @@ The H713 sibling already flashed a prebuilt PHH Treble ARM32 GSI and documented 
 - Partitions: A/B, dynamic `super`; `boot`, `init_boot`, `vendor_boot`, `dtbo`, `vbmeta` (+ system / vendor), reserve partition for calibration.
 - Rooted-build state: `verifiedbootstate=orange`, verity disabled, SELinux Permissive.
 
-## Next (parallel)
+## Next
 
-**Track A, build the clean userspace:**
-- [ ] Set up a Lineage 21 build host (external drive, WSL Ubuntu, `repo` and deps).
-- [ ] Sync `lineage-21`; build the 32-bit arm GSI target; produce `system.img`.
-- [ ] Flash test (keep the stock image for unbrick), verify hardware, write "What works / Bugs".
-- [ ] Re-add the keystone / autofocus stack and the defaults (Aurora, SmartTube, PhairPlay).
-
-**Track B, build the independent BSP from the mine:**
+**Track B (primary), build the independent BSP from the mine:**
 - [x] `dtc` the extracted DTB to `.dts` (done; 3196 lines, driver surface classified above).
 - [x] Pull the H713/H310 anchors (YuujiLab / probonopd): confirmed research + tooling, not kernel trees. Kernel base is mainline linux-sunxi + any upstream sun50iw12 bring-up, guided by our DTS/config.
-- [ ] Stage the vendor blobs and `.ko` (Mali, CedarX VE, AIC8800, `vs-display`) locally; split "reuse" from "reverse".
-- [ ] RE the out-of-tree drivers (`vs,display`/`vs,osd`, `tvtop`/`tvdisp_top`, `tcon`/`lvds0`, `z20hd720m`, `ksc100`) with REA/Ghidra against the DTS reg/clock/irq map.
+- [x] Stage the new-driver `.ko` locally and split "reuse" from "reverse" (65 second-stage `.ko` in `/vendor` + `/vendor_dlkm`; the first-stage display stack from the `vendor_boot` ramdisk); build string pinned.
+- [ ] **Phase B1 (now): deep-RE the new drivers** into `re/` register maps, in bring-up order `sunxi_ksc` -> `sunxi_tvtop` -> `vs-display` -> `tcon`/`lvds0` + `z20hd720m` -> `vs-osd` (`sunxi-ve` last). Tools: ARM objdump + Ghidra headless, anchored on the DTS reg bases.
+- [ ] Phase B2: buildable kernel base (mainline linux-sunxi, defconfig from `config.gz`, DTS to source, sun50iw15 CCU/pinctrl/DRAM from sun50iw12).
+- [ ] Phase B3: boot.img + the no-serial debug harness (pstore/ramoops, USB dmesg dump, GPIO heartbeat); flash to `boot_a`, keep stock to unbrick.
+- [ ] Phase B4: driver bring-up loop by dependency order, reusing the Mali / CedarX / AIC8800 blobs.
+
+**Track A (deferred fallback), build the clean userspace:**
+- [ ] Set up a Lineage 21 build host (external drive, WSL Ubuntu, `repo` and deps).
+- [ ] Sync `lineage-21`; build the 32-bit arm GSI target; produce `system.img`.
+- [ ] Flash test (keep the stock image for unbrick), verify hardware over `adb logcat`, write "What works / Bugs".
+- [ ] Re-add the keystone / autofocus stack and the defaults (Aurora, SmartTube, PhairPlay).
 
 ## Bugs
 
