@@ -2,7 +2,7 @@
 
 Living status of the project. Updated as reality changes. See [PLAN.md](PLAN.md) for the roadmap.
 
-**Phase:** **Track B is the primary focus; Track A is a deferred fallback.** Phase B1 done (new-driver register maps in `re/`). Phase B2 in progress (see [kernel/README.md](kernel/README.md)): base decided (mainline 6.16.x, anchored on the shift H713 port, H6-compatible, no Nix), build host up, the anchor's H713 DTB built as a sanity pass. Next in B2: convert the vendor DTS to `sun50i-h726-hy300ultra.dts` + `h726_defconfig` + the CCU/pinctrl H6 gap, then the kernel Image. No UART yet, so booting (B3) debugs blind (pstore + USB dmesg dump + GPIO heartbeat).
+**Phase:** **Track B is the primary focus; Track A is a deferred fallback.** Phase B1 done (new-driver register maps in `re/`). Phase B2 producing real buildable artifacts (see [kernel/README.md](kernel/README.md)): `kernel/sun50i-h726-hy300ultra.dts` (our board DTS, compiles clean to a 9276-byte DTB), `kernel/configure-h726.sh` + `kernel/h726_defconfig`, and `kernel/build.sh` (self-contained; builds mainline 6.16.7 + our DTS into a ~41 MB `Image` + the DTB, verified). Key finding: sun50iw15 is not H6 (core controllers relocated), so it compiles and builds but will not boot until a **sun50iw15 CCU + pinctrl driver** exists; that is the next kernel task. No UART yet, so booting (B3) debugs blind (pstore + USB dmesg dump + GPIO heartbeat).
 **Last updated:** 2026-10-28.
 
 ## What is working

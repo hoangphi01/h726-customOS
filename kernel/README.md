@@ -38,11 +38,31 @@ make defconfig            # generic arm64, includes CONFIG_ARCH_SUNXI
 make allwinner/<board>.dtb
 ```
 
-**Sanity pass done:** dropping the anchor's `sun50i-h713-hy300.dts` into `arch/arm64/boot/dts/allwinner/` and building it produces a valid 14 KB DTB (only benign `wifi@1` reg-format warnings). So the toolchain, the mainline tree and the H6-compatible DTS approach all work; our H726 work plugs into the same pipeline.
+Our own build, verified end to end: `bash build.sh` fetches mainline 6.16.7, drops in `sun50i-h726-hy300ultra.dts`, applies `configure-h726.sh`, and builds both artifacts.
+
+- `sun50i-h726-hy300ultra.dtb`: **9276 bytes**, compiles with no errors or warnings.
+- `arch/arm64/boot/Image`: **~41 MB**, built from `h726_defconfig` (our config deltas confirmed present).
+
+## sun50iw15 is not H6 (the key finding)
+
+Unlike the H713, which the anchor could treat as H6-compatible, the H726's core controllers are **relocated** in the address map, so the mainline H6 `ccu`/`pinctrl` drivers do not simply apply. Comparing our extracted device tree against H6:
+
+| Block | H6 / H713 | H726 (sun50iw15) |
+|---|---|---|
+| CCU | `0x3001000` | `0x2002000` (+ `cpupll@2001000`, `pll-dram@4830000`, `rtc-ccu@7090000`) |
+| GIC | `0x3021000` | `0x3400000` |
+| pinctrl | `0x300b000` | `0x2000000` |
+| watchdog | `0x30090a0` | `0x2051000` |
+| UART | `0x5000000` | `0x2600000` |
+| THS | `0x5070400` | `0x7070400` |
+| IOMMU | `0x30f0000` | `0x2010000` |
+| eMMC / SID / R_CCU / R_PIO | same | `0x4022000` / `0x3006000` / `0x7010000` / `0x7022000` (match) |
+
+So the device tree names the controllers as `allwinner,sun50iw15-ccu` / `-pinctrl` / `-r-ccu` and the clock/reset indices follow the vendor numbering. The genuinely new kernel work is therefore a **sun50iw15 CCU and pinctrl driver** (the vendor has these; mainline does not), which is the gate to booting.
 
 ## Status
 
-Phase B2 in progress. Done: the base decision (above), the build host, and the anchor's H713 DTB built as a sanity check. Next: convert the extracted vendor device tree into `sun50i-h726-hy300ultra.dts` (H6-compatible, using the anchor's H713 DTS as the structural template), assess how far the H6 `ccu`/`pinctrl` cover sun50iw15, and get our DTS + an `h726_defconfig` building, then the kernel `Image`. Booting is Phase B3 (needs the no-serial debug harness, since there is no UART yet). See [../STATUS.md](../STATUS.md).
+Phase B2 is producing real, buildable artifacts (DTS + defconfig + build scripts, all verified to compile/build). The honest limit: this **compiles and builds but will not boot** until the sun50iw15 CCU and pinctrl drivers exist, because without them no clocks or pins come up. That driver work is the next kernel task, after which Phase B3 (boot, debugged blind through pstore / USB dmesg / GPIO heartbeat, since there is no UART yet) can begin. See [../STATUS.md](../STATUS.md).
 
 ## Planned contents
 
