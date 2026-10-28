@@ -2,78 +2,64 @@
 
 The roadmap for building a clean custom OS on the Allwinner H726 (`sun50iw15`). Read [RULE.md](RULE.md) for how we work and [STATUS.md](STATUS.md) for where we are.
 
-## 1. Context and decision
+## 1. Context and the central idea
 
-The stock OS is a bloated, untrusted BadBox clone that runs poorly on 1 GB RAM. We want a lean, clean Lineage-based system that keeps the projector working. There are two tiers, and which one we can reach is decided by two cheap questions answered in Phase 0:
+The stock OS is a bloated, untrusted BadBox clone that runs poorly on 1 GB RAM. We want a lean, clean Lineage-based system that keeps the projector working, and ideally a trustworthy from-source kernel.
 
-1. Is the device Treble compliant, so a Generic System Image (GSI) can replace the vendor userspace?
-2. Is there a buildable kernel for `sun50iw15` (Allwinner BSP source, or a path to rebuild from the extracted DTB and config)?
+There is no public Allwinner BSP for `sun50iw15`, and that is normal: the linux-sunxi and LineageOS communities never get the factory BSP. The central method of this project is therefore:
 
-Tier A does not need kernel source. Tier B does. We pursue A first for a result that boots, and B as the path to a clean, auditable kernel.
+> **The stock firmware is the gold mine.** We have the full Magcubic IMAGEWTY image. Everything a port needs is inside it, and we extract rather than beg for a secret SDK: the device tree, the kernel config, the proprietary blobs, and the boot chain to reverse-engineer. We diff the open pieces against mainline Linux and write a new, transparent BSP; we reuse the closed pieces as binaries.
 
-## 2. The honest scope of "reverse the kernel"
+Phase 0 recon is complete (see STATUS). Verdict: two tracks, both fed from the gold mine.
 
-We do not decompile the kernel binary into buildable source; that is not realistic. What is realistic and sufficient for a port:
+## 2. The gold mine: what we extract from the stock firmware
 
-- **Extract the DTB** (device tree blob) from the boot image. This is unpacking, not reverse-engineering, and it gives the hardware description a port needs.
-- **Extract the kernel config** (`/proc/config.gz` if present, or from the image) to learn exactly how the vendor built it.
-- **Rebuild from the BSP.** The base is kernel `5.15.167`; match it to Allwinner's open BSP (longan / tina) for `sun50iw15` and rebuild with the extracted config and DTB. This reconstructs the build, it does not reverse the binary.
-- **Targeted driver RE.** Reverse only the specific out-of-tree drivers the BSP lacks (for example parts of the display and keystone path; the AIC8800 `rwnx` driver is relatively open). This is where tools such as [morluto/rea](https://github.com/morluto/rea) with Ghidra are used, on one `.ko` or `.so` at a time, never the whole kernel.
+The stock Magcubic IMAGEWTY (`HY300Ultra_H726_Android14_STOCK_Magcubic.img`, 2.2 GB) unpacks into the partitions; the live rooted device gives the same artifacts more easily. Already extracted (kept local, not committed, see RULE):
 
-## 3. Phases
+| Artifact | From | Use |
+|---|---|---|
+| Device tree blob (`system.dtb`, valid FDT) | `/sys/firmware/fdt` | `dtc` to `.dts`: exact memory map, clocks, pinctrl, interrupts, display nodes. The hardware spec. |
+| Kernel config (`config.gz`) | `/proc/config.gz` | Exactly which features and drivers the vendor built. The defconfig base. |
+| Kernel modules (`*.ko`) | `/vendor/lib/modules` | `aic8800_*` (Wi-Fi), `snd_soc_sunxi_*` (audio), `sunxi-*`, `mali_kbase`, `vs-display`/`vs-osd` (the custom display), sensors (`sc7a20h`, `st_lsm6dsx`, `stk`, `stmvl53l1`), `motor-limiter` (focus). Reuse where possible; RE the sunxi-specific ones. |
+| Userspace blobs (`*.so`) | `/vendor/lib*` | `libGLES_mali.so` (GPU), the CedarX VE stack (`libVE`, `libcedarse`, `libvdecoder`, `libvenc_*`, `libawcodec2_vndk`), `libdisplayconfig.so`, display HAL. Copy as-is. |
+| Firmware blobs (`*.bin`) | `/vendor/etc/firmware` | `EXEC_KERNEL_IMAGE.bin`, `OS_ROM.bin`, `LogoRegData.bin`, cedarSE. Reuse as-is. |
+| Boot chain (`boot_a`, `vendor_boot`, `bootloader_a`) | partitions | The kernel binary + DTB + ramdisk, and U-Boot / SPL for low-level init RE (Ghidra). |
 
-### Phase 0, recon (cheap, decides everything)
+## 3. Two tracks, both fed from the mine
 
-- Confirm Treble and GSI capability: `ro.treble.enabled`, VNDK version, dynamic partitions (`super`), the system-as-GSI slot layout.
-- Find a 32-bit `armeabi-v7a` LineageOS or AOSP GSI candidate (the device is 32-bit userspace, so the common arm64 GSIs will not boot).
-- Extract the DTB and kernel config from the stock `boot` / `init_boot` image (we have the full stock image from the sibling repo).
-- Determine whether the Allwinner BSP (longan / tina) has a public `sun50iw15` branch on kernel 5.15.
-- Inventory the proprietary bits to keep or extract: keystone and autofocus (`com.hysd.vafocus`, `KeystoneUtils_726`, `set_angle_offset` to `/oem/gsensor_data`, `ProjectActivity` / `InitAngleActivity`), the Mali-G31 GPU blob, the AIC8800 Wi-Fi driver, the DRM/KMS display path, audio.
+### Track A, clean userspace now (the sure win)
+Build a 32-bit LineageOS 21 (arm) GSI from source and flash it to `system_a`, keeping the vendor kernel, `/vendor` and `/product`. From the mine we take the keystone and autofocus apps (and the reverse-engineering from the sibling repo) to re-add the projector features on the clean Lineage userspace. Result: clean userspace, lean on 1 GB, vendor kernel.
 
-### Phase A, GSI route (no kernel source needed)
+### Track B, independent BSP (the real, trustworthy kernel)
+Build a transparent kernel the linux-sunxi way, entirely from the mine plus open sources:
+1. `dtc` the extracted DTB to `.dts`; this is the authoritative hardware description.
+2. Use the extracted `config.gz` as the defconfig base.
+3. **Anchor on the H713 (`sun50iw12`) sibling** ([YuujiLab/HY300-H713-Research](https://github.com/YuujiLab/HY300-H713-Research), probonopd) and mainline linux-sunxi: H726 is one SoC step away, so their bring-up (CCU clocks, pinctrl, DRAM, device tree) is the base to extend to sun50iw15.
+4. Reuse the closed blobs as-is (Mali userspace, CedarX VE, display HAL, VE firmware).
+5. Write or port the genuinely new drivers: the SoC-specific display path (`vs-display` / `vs-osd` / `tvtop` / the DE) and the VE kernel glue. RE the vendor `.ko` with REA / Ghidra only where mainline has nothing to diff against.
+6. Boot, then debug hardware quirks from `dmesg`.
 
-- Flash a 32-bit Lineage GSI onto the system slot, keeping the vendor kernel and `/vendor` partition.
-- Verify boot and hardware: display, Wi-Fi, Bluetooth, audio, HDMI input, USB, gravity sensor.
-- Re-add the projector apps on top (the keystone / autofocus stack), reusing the reverse-engineering from the sibling repo.
-- Integrate the defaults (see Section 4).
-- Deliverable: a clean-userspace build that boots and projects.
+Track A gives a usable machine while Track B matures.
 
-### Phase B, from-source route (if a buildable kernel exists)
+## 4. Phases
 
-- Build a device tree for `sun50iw15` from the extracted DTB and config.
-- Rebuild the kernel from the BSP plus config and DTB.
-- Extract the vendor blobs and assemble `/vendor`; write HAL shims only where a blob does not match the clean userspace.
-- Reverse-engineer the out-of-tree drivers that block boot or hardware, with REA / Ghidra.
-- Boot, then debug the inevitable hardware quirks (panel timing, gsensor, Mali) from `dmesg`.
-- Deliverable: a from-source, clean-kernel build.
+- **Phase 0 (done):** recon. Treble confirmed, device facts, the two-track verdict, the gold-mine inventory. See STATUS.
+- **Phase 1, Track A:** set up the Lineage 21 build host (external drive, WSL), sync `lineage-21`, build the 32-bit arm GSI, flash-test (keep the stock image for unbrick), verify hardware, re-add keystone and the defaults (Aurora, SmartTube, PhairPlay).
+- **Phase 1, Track B (parallel):** `dtc` the DTB to `.dts`; stage the blobs and `.ko`; obtain the H713 kernel tree; map the extracted config and DTS onto it; identify the drivers to write (display, VE) versus reuse.
+- **Phase 2, Track B:** build the kernel from the new BSP, boot, bring up hardware driver by driver.
+- **Integration (both):** Aurora as the store, SmartTube bundled, PhairPlay as the default receiver (the aspect and Wi-Fi-lock fixes baked in), dark Material UI and the Hub, only the keystone stack kept from the vendor, a slim Magisk module for runtime bits.
+- **Packaging:** repack into the Allwinner IMAGEWTY with recomputed `add_sum` verify-files (proven by the root build in the sibling repo); flash via PhoenixSuit over FEL; the reserve partition (calibration) is skipped by stock flashing and must be preserved.
 
-### Integration (both tiers)
+## 5. Open questions and scope
 
-- Aurora Store as the default store (no Google account required).
-- SmartTube bundled for ad-free YouTube (the device is 32-bit, pick AVC presets).
-- PhairPlay integrated as the default cast receiver: autostart, the aspect-ratio fix and the Wi-Fi low-latency lock baked in (both from the sibling repo).
-- Dark Material UI and the Hub app.
-- Keep only the reverse-engineered keystone / autofocus stack from the vendor.
-- A slim Magisk module remains for runtime-only bits (the hotacksu mask, the Wi-Fi lock daemon).
+- 32-bit arm Lineage 21 GSI is self-built (no A14 arm prebuilt) and less tested than arm64.
+- Track B is a real kernel bring-up: standard and reusable parts are easy, but the display and VE drivers are new work, accelerated by the H713 sibling and the extracted DTS.
+- Vendor HIDL@6.0 HALs on a newer GSI may need shims.
+- Reuse blobs for local build only; do not redistribute (see RULE).
 
-### Packaging and flashing
+## 6. Tools and references
 
-- Repack into the Allwinner IMAGEWTY with recomputed `add_sum` verify-files (the method proven by the root build in the sibling repo).
-- Flash via PhoenixSuit over FEL (`adb reboot efex`); unbrick with the stock image; the reserve partition (per-unit colour and keystone calibration) is skipped by stock flashing and must be preserved.
-
-## 4. Open questions and risks
-
-- Treble compliance is unconfirmed.
-- 32-bit ARM GSIs are rarer and less tested than arm64.
-- Kernel source availability for `sun50iw15` is the crux for Tier B.
-- A clone vendor often patches on top of the BSP without publishing the patches, so a rebuilt kernel can hit hardware quirks that need debugging.
-- The keystone and autofocus stack may depend on vendor HALs that are not trivial to carry onto a GSI.
-- Blob and firmware licensing: we extract for local use and do not redistribute.
-
-## 5. Tools and references
-
-- Sibling repo: [hoangphi01/hy300ultra-h726-allinone](https://github.com/hoangphi01/hy300ultra-h726-allinone) (root, RE, `add_sum` build, debloat, casting fixes).
-- RE tooling: [morluto/rea](https://github.com/morluto/rea), Ghidra.
+- Sibling repo: [hoangphi01/hy300ultra-h726-allinone](https://github.com/hoangphi01/hy300ultra-h726-allinone) (root, RE, `add_sum` build, debloat, casting fixes, the stock image).
+- Mining and RE: `dtc`, `extract-ikconfig`, `unpackbootimg`, the sibling repo's IMAGEWTY tools, [morluto/rea](https://github.com/morluto/rea) + Ghidra, [smaeul/sunxi-blobs](https://github.com/smaeul/sunxi-blobs).
+- Kernel base: mainline linux-sunxi, the H713 work at [YuujiLab/HY300-H713-Research](https://github.com/YuujiLab/HY300-H713-Research) and [probonopd/hy310-deshittify](https://github.com/probonopd/hy310-deshittify).
 - GSI and Treble: LineageOS, [phhusson/treble_experimentations](https://github.com/phhusson/treble_experimentations).
-- Allwinner BSP: longan / tina (to be located for `sun50iw15`).
-- H713 research base (closest prior art): [YuujiLab/HY300-H713-Research](https://github.com/YuujiLab/HY300-H713-Research), [probonopd/hy310-deshittify](https://github.com/probonopd/hy310-deshittify).
