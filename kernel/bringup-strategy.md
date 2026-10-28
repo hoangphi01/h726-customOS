@@ -71,17 +71,24 @@ A 3.3V USB-UART adapter (about 2-5 USD) on the board's debug pads gives log outp
 
 ## The checkpoint-beacon method (B3b, no UART)
 
-With no serial console, the only output is a GPIO: a direct `writel` to the PIO at `0x02000000`
-ticks the focus motor (PH13). Code at successive boot stages ticks a distinct number of times; the
-highest count seen is the furthest the boot reached, and a steady repeating tick means the kernel is
-fully alive. See [heartbeat.md](heartbeat.md) for the artifacts.
+With no serial console, the only output is a GPIO: a direct `writel` to the R_PIO at `0x07022000`
+**stutters the cooling fan (PL7)** - an audible brief off/on, the only signal that works on this unit
+(the motor is invisible because focus is manual, see [../re/bringup-signals.md](../re/bringup-signals.md)).
+Code at successive boot stages stutters a distinct number of times; the highest count heard is the
+furthest the boot reached, and a steady repeating stutter means the kernel is fully alive. See
+[heartbeat.md](heartbeat.md) for the artifacts.
 
-| Ticks | Stage | Proves |
+| Stutters | Stage | Proves |
 |---|---|---|
 | 1 | decompressor entry | gate #0 (already passed) |
 | 2 | kernel proper, after `__create_page_tables` (MMU off) | handed into `vmlinux` |
 | 3 | `early_initcall` | reached the init thread (setup_arch + mm + sched + timers) |
-| steady ~1 Hz | `late_initcall` kthread | kernel fully alive |
+| steady | `late_initcall` loop | kernel fully alive |
+
+**Open blocker (2026-10-29):** an external ~2 s cutoff (leading suspect: the watchdog) resets the SoC
+before the later stutters can be observed, and a single brief fan stutter is at the edge of
+audibility. Next: a reliable arch-timer-timed ~1 s fan-off to confirm "the kernel ran" unambiguously,
+then handle the watchdog. See [../re/bringup-signals.md](../re/bringup-signals.md).
 
 Two facts (verified against mainline v6.12/6.16 source) make this robust:
 
@@ -104,8 +111,9 @@ node and the arch timer. The CCU matters only when real peripherals come up.
 
 The heartbeat that confirmed gate #0 drove the cooling **fan** off (the fan cut out, which is how we knew our code ran). But the vendor U-Boot's splash was still being projected, so the **light engine was on with no cooling**, and after about 15 s the imager panel overheated (a dark bloom spread from the centre of the projected image; power was cut immediately and it is expected to recover once cool). **Rules for any on-device bring-up from now on:**
 
-- **Never drive the fan**, and never leave the device hung with the light engine on and no cooling. Use the **focus motor** (no thermal role) or, better, a UART console (read-only) as the signal. The kernel proper is safe here on its own: the bring-up device tree keeps `pwm-fan` disabled, so our kernel never touches cooling and the fan stays in the state U-Boot left it (running) for the whole run, even if the kernel hangs. The only way to cut the fan is the beacon asm writing PL7 directly, which is exactly what the beacons now refuse to do.
-- Keep hang time short: recover promptly (FEL + reflash the rooted image) rather than letting a hung kernel sit.
-- The committed heartbeat ([heartbeat/heartbeat-h726.S](heartbeat/heartbeat-h726.S)) is retargeted to the motor and documented accordingly.
+- **The fan (PL7) is the only usable beacon**, so it must be pulsed safely, never held off. The **focus motor cannot be the signal** - focus on this unit is a MANUAL wheel, so the autofocus motor does not move the image and is inaudible over the fan (the LED is not a SoC GPIO; reading the vendor backlight reboots the device). See [../re/bringup-signals.md](../re/bringup-signals.md).
+- Every fan pulse turns it off only **briefly** and **always** back on (resting state fan ON), in a tight inline loop so a hang cannot leave it off. Watch for the fan going *fully* silent and cut power at once. Note the standby state (red LED) is safe because the MCU turns the light engine off.
+- Keep hang time short. Prefer the **A/B one-shot loop** (flash `boot_b`, power-cycle falls back to stock `boot_a`) over FEL - no `/data` wipe (see [../re/bringup-signals.md](../re/bringup-signals.md)).
+- A UART console would remove the need to touch the fan at all, and is the real accelerator.
 
 Everything in Phase B2 so far (device tree, defconfig, CCU + pinctrl drivers) compiles and is correct as a hardware description; it just cannot boot until gate #0 is cleared.

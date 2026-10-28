@@ -73,7 +73,7 @@ if [ "$TARGET" != "arm64" ] && [ "${HEARTBEAT:-0}" = "1" ]; then
 	# Default CP1 is the fan beacon. For diagnostics, swap H726_BLINK for
 	# H726_SPINTEST (external-reset probe) or H726_BEEP (PA-toggle, proven
 	# silent) - both defined in h726-blink.h.
-	sed -i 's@^\( AR_CLASS(\tmrs\tr9, cpsr\t)\)@#include "h726-blink.h"\n\tH726_BLINK 3, r3, r4, r5, r6\n\1@' "$CH/head.S"
+	sed -i 's@^\( AR_CLASS(\tmrs\tr9, cpsr\t)\)@#include "h726-blink.h"\n\tH726_SPINTEST r3, r4, r5, r6\n\1@' "$CH/head.S"
 
 	# CP2 (2 ticks): kernel-proper head.S, right after __create_page_tables
 	# (MMU still off, physical). Only r0/r3/r6/r7 are free there.

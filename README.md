@@ -58,7 +58,7 @@ Track B (a from-source kernel) is the primary focus; Track A (a LineageOS GSI) i
 Full detail and a troubleshooting table in **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**.
 
 > [!CAUTION]
-> **Never drive the cooling fan in a bring-up test, and never leave a hung kernel sitting.** The light engine is on during the U-Boot splash; a test that turned the fan off while the kernel hung overheated the imager panel in ~15 s (a dark bloom from the centre; it recovered once cool). Use the focus motor or a UART as the signal, and cut power the instant the fan stops.
+> **The cooling fan is the only usable beacon, so pulse it safely - never hold it off.** The light engine is on during the U-Boot splash; a test that turned the fan off while the kernel hung overheated the imager panel in ~15 s (a dark bloom from the centre; it recovered once cool). **The focus motor cannot be used as a signal - focus on this unit is a MANUAL wheel**, so the autofocus motor does not move the image and is inaudible over the fan (the LED is not a SoC GPIO; reading the vendor backlight reboots the device). So the fan is unavoidable: every pulse must turn it off only briefly and **always** back on (resting state fan ON), and you cut power the instant the fan goes fully silent. A UART would remove the need entirely.
 
 > [!WARNING]
 > **If a test kernel hangs, `adb reboot efex` cannot reach FEL - use the hardware button.** The FEL entry on this unit is a **recessed FLASH button next to the HDMI port**: hold it with a paperclip while applying power (the PC then shows `1f3a:efe8`). Vol+ on the IR remote does **not** work. Know where this button is before you flash.
@@ -175,7 +175,7 @@ Track B (kernel từ source) là trọng tâm; Track A (LineageOS GSI) là fallb
 Chi tiết + bảng troubleshoot ở **[TROUBLESHOOTING.md](TROUBLESHOOTING.md)**.
 
 > [!CAUTION]
-> **Không bao giờ đụng vào QUẠT làm mát trong test kernel, và không để kernel treo lâu.** Đèn chiếu BẬT lúc splash U-Boot; một lần test tắt quạt trong khi kernel treo đã làm **panel quá nhiệt trong ~15 giây** (vệt đen loang từ tâm; nguội thì hồi). Dùng motor focus hoặc UART làm tín hiệu, và NGẮT ĐIỆN ngay khi quạt ngừng.
+> **Quạt là tín hiệu beacon DUY NHẤT dùng được, nên phải xung AN TOÀN - không bao giờ giữ tắt lâu.** Đèn chiếu BẬT lúc splash U-Boot; một lần test tắt quạt trong khi kernel treo đã làm **panel quá nhiệt trong ~15 giây** (vệt đen loang từ tâm; nguội thì hồi). **Motor KHÔNG dùng làm tín hiệu được - máy này lấy nét bằng VÒNG XOAY TAY**, nên motor autofocus không làm đổi ảnh và bị quạt át tiếng (đèn LED không phải GPIO của SoC; đọc backlight vendor thì reboot máy). Vậy buộc phải dùng quạt: mỗi xung chỉ tắt NGẮN rồi **luôn** bật lại (trạng thái nghỉ = quạt BẬT), và NGẮT ĐIỆN ngay khi quạt im hẳn. Có UART thì khỏi cần đụng quạt.
 
 > [!WARNING]
 > **Kernel test treo thì `adb reboot efex` KHÔNG vào được FEL - phải dùng nút cứng.** FEL của máy này là **nút FLASH ẩn cạnh cổng HDMI**: lấy kẹp giấy ấn giữ **trong lúc cấp nguồn** (PC hiện `1f3a:efe8`). **Vol+ trên remote IR KHÔNG ăn.** Nhớ vị trí nút này trước khi flash.

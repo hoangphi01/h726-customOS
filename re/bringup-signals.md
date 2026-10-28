@@ -119,8 +119,13 @@ touching the fan**, and went to **RED standby at ~2 s**. **Caveat (be honest):**
 the *silent* PA-beep as its blip, so we have no independent confirmation it ran - "red at ~2 s" could
 be our spinning kernel being cut, OR U-Boot finishing with `boot_b` and the MCU timing out. The spin
 test must be **re-run with the FAN blip** (`H726_SPINTEST`, which stutters PL7 audibly first): fan
-stutter = our kernel definitely ran, then stay-on vs red answers external-vs-crash. That is the #0 test
-next session. What *is* confirmed is that **`boot_b` runs our kernel** (a fan "stutter" was heard on an
+stutter = our kernel definitely ran, then stay-on vs red answers external-vs-crash. **This was tried
+(2026-10-29) and was inconclusive: no stutter was heard and the device went "straight to red, like a
+shutdown".** A single brief fan off/on blip is at the very edge of audibility in the reboot noise, so
+"no stutter" does not prove the kernel did not run. The fix is a **reliable, clearly-audible blip**:
+hold the fan OFF for ~1 s timed by the **ARM generic timer** (read `CNTVCT` via `mrrc p15,1`, spin until
+it advances ~24e6 ticks - accurate regardless of cache/CPU speed, and bounded so it is thermally safe),
+then ON, then spin. A 1 s silence of the loud fan is unmissable. That is the #0 test next session. What *is* confirmed is that **`boot_b` runs our kernel** (a fan "stutter" was heard on an
 earlier fan-beacon build - U-Boot never toggles the fan - and `misc` slot_b tries decremented 1->0), so
 the slot is not locked. The external-cutoff reading below is the **leading hypothesis**, not yet proven:
 the **watchdog**. A watchdog reset at ~2 s fits every
