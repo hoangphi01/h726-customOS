@@ -1,26 +1,26 @@
 #!/usr/bin/env python3
-# Pack our 32-bit zImage into the stock boot_a and produce a flashable
-# IMAGEWTY that PhoenixSuit writes to boot_a ONLY (surgical), so the rooted
-# system, /data and the calibration partition are left untouched.
+# Pack our 32-bit zImage into the boot_a of a base IMAGEWTY (MINIMAL DIFF).
 #
-#   python3 pack_heartbeat_boot.py STOCK_IMAGEWTY.img zImage out_boot_hb.img
+#   python3 pack_heartbeat_boot.py BASE_IMAGEWTY.img zImage out_boot_hb.img
 #
-# How it stays safe and correct:
-#  - it finds boot.fex / Vboot.fex by walking the IMAGEWTY file table (no
-#    hardcoded offsets);
-#  - it overwrites ONLY the kernel region inside boot_a's Android boot image,
-#    padded to the original kernel size, so boot_a's total size is unchanged
-#    (a minimal same-size swap, the pattern proven by the root build);
-#  - it recomputes the add_sum verify-file, after first confirming the
-#    algorithm reproduces the stock boot's stored checksum (aborts if not);
-#  - it rewrites dlinfo to list only boot_a, so nothing else is flashed.
+# Use the rooted image as the base (root-tools/HY300Ultra_H726_ROOTED_v2.img)
+# so flashing keeps root and recovery is just re-flashing that same image.
 #
-# Recovery is always available: re-flash the stock IMAGEWTY over FEL.
+# This follows EXACTLY the method PhoenixSuit accepts (the root "v2" lesson,
+# docs.md "BAI HOC VERIFY CHECKSUM"): copy the base image whole, overwrite
+# ONLY one payload at its exact offset and same size, patch ONLY that
+# partition's add_sum verify-file, and touch NOTHING else - no dlinfo, no
+# sys_partition, no header. (The earlier dlinfo-surgery approach was REJECTED
+# by PhoenixSuit; a full flash is safe anyway because Allwinner skips the
+# reserve/calibration partition.)
+#
+# Here the one payload is boot_a: we overwrite only the kernel region inside
+# its Android boot image, padded to the original kernel size, so boot_a's
+# total size is unchanged. We confirm the add_sum algorithm reproduces the
+# base boot's stored checksum before writing (abort on mismatch).
 import sys, struct, shutil, os
 
-STOCK, ZIMG, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
-DLINFO_OFF, DLINFO_LEN = 0x0031e2b0, 16384
-DL_MAGIC = b"\xef\xa4\x10\xcb"
+BASE, ZIMG, OUT = sys.argv[1], sys.argv[2], sys.argv[3]
 
 
 def add_sum(b: bytes) -> int:
@@ -49,7 +49,7 @@ def imagewty_table(f):
     return ents
 
 
-with open(STOCK, "rb") as f:
+with open(BASE, "rb") as f:
     ents = imagewty_table(f)
     assert "boot.fex" in ents and "Vboot.fex" in ents, "boot.fex / Vboot.fex not found"
     b_off, b_stored, _ = ents["boot.fex"]
@@ -84,38 +84,20 @@ new_sum = add_sum(bytes(boot))
 print(f"new add_sum(boot) = {new_sum:#010x}")
 
 # Build the output image.
-if os.path.exists(OUT) and os.path.getsize(OUT) == os.path.getsize(STOCK):
+if os.path.exists(OUT) and os.path.getsize(OUT) == os.path.getsize(BASE):
     print("output exists with the right size, reusing the copy")
 else:
     print("copying stock image (2 GB, a moment)...")
-    shutil.copyfile(STOCK, OUT)
+    shutil.copyfile(BASE, OUT)
 
+# Minimal diff: overwrite ONLY boot.fex and its Vboot.fex. dlinfo, header,
+# every other byte: identical to the base (this is what PhoenixSuit accepts).
 f = open(OUT, "r+b")
 f.seek(b_off); f.write(boot)
 f.seek(v_off); f.write(struct.pack("<I", new_sum) + b"\x00" * (v_stored - 4))
-
-# Surgical dlinfo: keep only the boot_a entry so PhoenixSuit flashes boot_a only.
-f.seek(DLINFO_OFF); dl = bytearray(f.read(DLINFO_LEN))
-assert dl[:4] == DL_MAGIC, "dlinfo magic mismatch"
-count, = struct.unpack_from("<I", dl, 0x10)
-ENTRY, BASE = 0x48, 0x20
-
-
-def find_dl(name):
-    for i in range(count):
-        o = BASE + i * ENTRY
-        nm = dl[o:o + 16].split(b"\x00")[0].decode("latin1")
-        if nm == name:
-            return bytes(dl[o:o + ENTRY])
-    raise KeyError(name)
-
-
-boot_entry = find_dl("boot_a")
-new = bytearray(DLINFO_LEN)
-new[0:0x20] = dl[0:0x20]
-struct.pack_into("<I", new, 0x10, 1)          # count = 1
-new[BASE:BASE + ENTRY] = boot_entry
-f.seek(DLINFO_OFF); f.write(new)
 f.close()
-print("dlinfo rewritten: count=1 (boot_a only); nothing else is flashed.")
+assert os.path.getsize(OUT) == os.path.getsize(BASE), "output size changed"
+print("minimal diff: only boot.fex + Vboot.fex changed; dlinfo and all else untouched.")
 print("DONE:", OUT)
+print("Flashing this writes the whole base image (boot_a now ours); the")
+print("reserve/calibration partition is skipped by Allwinner, so it is safe.")

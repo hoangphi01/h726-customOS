@@ -1,64 +1,81 @@
 # Flashing the heartbeat test (step by step)
 
-How to put the 32-bit `zImage` (with the gate-#0 red-LED heartbeat) onto the device and read the result. The goal of this run is one yes/no answer: **does the vendor U-Boot enter our kernel?** See [../bringup-strategy.md](../bringup-strategy.md) and [../heartbeat.md](../heartbeat.md) for the why.
+How to put the 32-bit `zImage` (with the gate-#0 red-LED heartbeat) onto the device and read the result. The goal of this run is one yes/no answer: **does the vendor U-Boot enter our kernel?** See [../bringup-strategy.md](../bringup-strategy.md) and [../heartbeat.md](../heartbeat.md).
 
-This touches only `boot_a`. `/data`, the rooted system and the calibration partition are left untouched, and FEL + the stock image recover anything, so it cannot brick the device.
+Nothing here can brick the device: FEL stays available and the stock / rooted image reflashes.
 
-## What you need
+## The one rule that matters: how PhoenixSuit verification works
 
-- WSL Ubuntu with the build set up (the same one `kernel/build.sh` uses).
-- The stock IMAGEWTY (for packing and for recovery): `HY300Ultra_H726_Android14_STOCK_Magcubic.img`.
-- PhoenixSuit V1.19 (the one used to root the device).
-- The USB-C to USB-A cable (for FEL / adb).
-- A dark room: the heartbeat is a red LED blink, easier to see with the lamp dim.
+This is the lesson from rooting this device, and it is easy to get wrong.
 
-## Step 1 - build the zImage with the heartbeat
+- Inside an Allwinner **IMAGEWTY**, every partition payload is followed by a 16-byte **verify file** named `V<name>.fex` (first 4 bytes = an `add_sum` checksum: pad the payload to a multiple of 4, then sum all little-endian u32 words mod 2^32).
+- If you edit a payload (e.g. the kernel in `boot`) and do **not** update its `V<name>.fex`, **PhoenixSuit rejects the whole image**: *"Please ensure the firmware file is valid."*
+- The method PhoenixSuit **accepts** is **minimal diff**: copy the base image whole, overwrite only the one payload at its exact offset and the **same size**, patch only that payload's `V` file, and **never touch `dlinfo`, `sys_partition` or the header**. The "surgical dlinfo" approach (trimming the partition list) is **rejected**; do not use it.
+- A full flash is safe anyway: `dlinfo` lists 13 firmware partitions (bootloader, env, boot, vendor_boot, init_boot, super, misc, vbmeta*, dtbo, media_data, Reserve0). **`userdata` is not in the list, so `/data` is never flashed**, and Allwinner **skips** the `Reserve0` calibration partition. So customizations in `/data` and the per-unit calibration survive a flash; only `super` is reset to the base image's.
+
+The cleanest way to avoid this problem entirely is not to use an IMAGEWTY at all, below.
+
+## Method A (recommended): `dd` the boot_a partition on the rooted device
+
+The device is rooted, so write `boot_a` directly. `dd` copies raw bytes; U-Boot reads the partition directly (verity is disabled), so **there is no verify file and nothing to reject**, and **only `boot_a` is touched** (not even `super`).
+
+**1. Build the boot_a image** (a stock Android boot image with our zImage as the kernel):
 
 ```sh
-cd <h726-customOS>
-HEARTBEAT=1 bash kernel/build.sh
-# produces  ~/h726kernel/linux-6.16.7/arch/arm/boot/zImage  (32-bit, heartbeat in the decompressor)
-```
-
-## Step 2 - pack it into a flashable image (boot_a only)
-
-```sh
-python3 kernel/flash/pack_heartbeat_boot.py \
+HEARTBEAT=1 bash kernel/build.sh                       # builds the zImage
+python3 kernel/flash/build_heartbeat_boot.py \
     /path/to/HY300Ultra_H726_Android14_STOCK_Magcubic.img \
     ~/h726kernel/linux-6.16.7/arch/arm/boot/zImage \
-    boot_hb.img
+    boot_hb_dd.img
 ```
 
-The script prints its checks. It must say **`add_sum(stock boot) ... MATCH`** before it writes anything; if it says MISMATCH it aborts and nothing is flashed. The output `boot_hb.img` is a full IMAGEWTY whose dlinfo lists **only `boot_a`**, so PhoenixSuit writes only that partition.
+(`boot_hb_dd.img` is 64 MB, the same size as `boot_a`. You can also dump your own `boot_a` from the device and pass that instead of the stock image.)
 
-## Step 3 - flash with PhoenixSuit over FEL
+**2. Back up the current boot_a**, then write ours:
 
-The same flow that flashed the rooted image:
+```sh
+adb shell su -c 'dd if=/dev/block/by-name/boot_a of=/sdcard/boot_a_backup.img'
+adb pull /sdcard/boot_a_backup.img            # keep this safe
 
-1. Put the device in FEL: `adb reboot efex` (or hold Vol+ on the IR remote at power-on).
-2. Open PhoenixSuit V1.19, choose `boot_hb.img` as the firmware.
-3. Click Upgrade, confirm "Do Mandatory Upgrade?", then replug USB / power to trigger. PhoenixSuit writes `boot_a` only (seconds, not the full 2 GB).
+adb push boot_hb_dd.img /data/local/tmp/boot_hb.img
+adb shell su -c 'dd if=/data/local/tmp/boot_hb.img of=/dev/block/by-name/boot_a'
+adb reboot
+```
 
-## Step 4 - watch
+**3. Watch** the red LED in the first second or two after it reboots.
 
-Power the device on and watch the red LED in the first second or two.
+## Reading the result
 
 | What you see | What it means | Next |
 |---|---|---|
-| Red LED blinks ~5 times at power-on | **Gate #0 passed.** U-Boot entered our 32-bit kernel; the CPU is running it. Branch 1 is correct. | Move on to the CCU/pinctrl offsets. |
-| No blink, device does not reach Android | Either the pin guess is wrong, or U-Boot did not enter the kernel. | Recover (below), then retarget the pin and retry. |
-| Device boots Android as normal | Our kernel probably was not entered (U-Boot fell through). | Recover, re-check the pack step. |
+| Red LED blinks ~5 times | **Gate #0 passed.** U-Boot entered our 32-bit kernel; the CPU is running it. | On to the CCU/pinctrl offsets. |
+| No blink, device does not reach Android | The pin guess is wrong, or U-Boot did not enter the kernel. | Recover, then retarget the pin and retry. |
 
-The device will **not** boot into Android with our kernel (the CCU is not corrected yet, so the kernel hangs after the heartbeat). That is expected. The heartbeat is the whole signal for this run.
+The device will **not** boot into Android with our kernel (the CCU is not corrected yet, so it hangs after the heartbeat). That is expected; the heartbeat is the whole signal for this run.
 
-## Recovery (always available)
+## Recovery
 
-Re-flash the stock `boot_a`, or the whole stock image, over FEL:
+Because the heartbeat kernel hangs, Android will not come up to `dd` the backup back. Recover over FEL:
 
-- Quick: re-run the pack step but point it at an **unmodified** stock `zImage`... simpler, just flash the full stock IMAGEWTY in PhoenixSuit (the `02_STOCK_firmware_unbrick` image). That restores `boot_a` (and everything), and the device boots the rooted Android again (data and calibration are preserved by the stock flash, as when rooting).
+1. Enter FEL: hold Vol+ on the IR remote at power-on (or the FEL pad); the PC sees `1f3a:efe8`.
+2. PhoenixSuit V1.19 -> flash the **unmodified** rooted image `root-tools/HY300Ultra_H726_ROOTED_v2.img` (or the stock image). Unmodified images already carry correct verify files, so there is nothing to repack and nothing to reject.
+3. `/data` and calibration are preserved (not flashed); the device boots the rooted Android again.
+
+## Method B (alternative): PhoenixSuit, minimal-diff image
+
+If you prefer to flash an IMAGEWTY, build one with `kernel/flash/pack_heartbeat_boot.py` using the **rooted v2 image as the base** (so you stay rooted). It follows the accepted minimal-diff method: it overwrites only `boot.fex` and recomputes only `Vboot.fex`, and confirms the `add_sum` algorithm against the base before writing; `dlinfo` and everything else are untouched.
+
+```sh
+python3 kernel/flash/pack_heartbeat_boot.py \
+    root-tools/HY300Ultra_H726_ROOTED_v2.img \
+    ~/h726kernel/linux-6.16.7/arch/arm/boot/zImage \
+    boot_hb_imagewty.img
+```
+
+Then flash `boot_hb_imagewty.img` with PhoenixSuit over FEL, the same flow used to root. Recovery is the same as above (flash the unmodified v2 image).
 
 ## If it does not blink: retarget the pin
 
-The red LED is `PL0` as a best guess from the H713 sibling; this unit may differ. Edit [../heartbeat/heartbeat-h726.S](../heartbeat/heartbeat-h726.S) (the register math and alternative pins are in [../heartbeat.md](../heartbeat.md)), rebuild Step 1, and retry. Each attempt is safe.
+The red LED is `PL0`, a best guess from the H713 sibling; this unit may differ. Edit [../heartbeat/heartbeat-h726.S](../heartbeat/heartbeat-h726.S) (the register math and alternatives are in [../heartbeat.md](../heartbeat.md)), rebuild step 1, and retry. Each attempt is safe.
 
-The real accelerator remains a 3.3V USB-UART on the debug pads: with `earlycon` the kernel prints from its assembly head, so you see exactly where it is instead of guessing from a blink.
+A 3.3V USB-UART on the debug pads makes all of this unnecessary: with `earlycon` the kernel prints from its assembly head, so you see exactly where it is instead of guessing from a blink.
