@@ -28,7 +28,7 @@ Git-bash (MSYS) rewrites arguments that look like Unix paths before they reach t
 ## 3. An env-var prefix passed through `wsl.exe --` may not reach the target
 
 `wsl.exe -- env HEARTBEAT=1 bash build.sh` (and `HEARTBEAT=1 bash ...` across the interop boundary)
-ran a **non-heartbeat** build while still exiting 0 — the flag was dropped, so none of the gated
+ran a **non-heartbeat** build while still exiting 0 - the flag was dropped, so none of the gated
 work happened and the wrong artifacts were produced.
 
 - **Fix:** put the `export` inside a WSL **wrapper script** and run the wrapper. Then (lesson 4)

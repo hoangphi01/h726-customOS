@@ -249,9 +249,9 @@ Root, phần reverse-engineering (keystone / display, phương pháp `add_sum` c
 
 **H726 (sun50iw15) chỉ cách H713 (sun50iw12) một bước SoC, nên bản port này đứng trên vai cộng đồng H713 HY300.** Xin tri ân:
 
-- **[well0nez/allwinner-h713-linux](https://github.com/well0nez/allwinner-h713-linux)** (trên nền **[cstenger/allwinner-h713-mainline](https://github.com/cstenger/allwinner-h713-mainline)**) — người *thực sự boot được mainline Linux hàng ngày* trên H713, với chuỗi boot mở đầy đủ (SPL + TF-A + U-Boot) và stack driver chạy (Panfrost, Cedrus, AIC8800, keystone). Phần dịch ngược tỉ mỉ của họ — nhất là **watchdog layout A523 có key** — chính là thứ giúp mình chẩn đoán đúng nút thắt boot khó nhất. Đây là ngọn hải đăng và nguồn cảm hứng; phần lớn chặng đường tới là đem việc H713 của họ sang H726.
-- **[srgneisner/hy300-linux-porting](https://github.com/srgneisner/hy300-linux-porting)** — hướng hardware-first, bản dump device-tree vendor của họ là ground truth cho node UART + watchdog của mình.
-- **[shift/sun50iw12p1-research](https://github.com/shift/sun50iw12p1-research)** — nghiên cứu H713 gốc + mẫu bảng SoC `sunxi-fel` mà mình sẽ theo cho `0x1911`.
+- **[well0nez/allwinner-h713-linux](https://github.com/well0nez/allwinner-h713-linux)** (trên nền **[cstenger/allwinner-h713-mainline](https://github.com/cstenger/allwinner-h713-mainline)**) - người *thực sự boot được mainline Linux hàng ngày* trên H713, với chuỗi boot mở đầy đủ (SPL + TF-A + U-Boot) và stack driver chạy (Panfrost, Cedrus, AIC8800, keystone). Phần dịch ngược tỉ mỉ của họ, nhất là **watchdog layout A523 có key**, chính là thứ giúp mình chẩn đoán đúng nút thắt boot khó nhất. Đây là ngọn hải đăng và nguồn cảm hứng; phần lớn chặng đường tới là đem việc H713 của họ sang H726.
+- **[srgneisner/hy300-linux-porting](https://github.com/srgneisner/hy300-linux-porting)** - hướng hardware-first, bản dump device-tree vendor của họ là ground truth cho node UART + watchdog của mình.
+- **[shift/sun50iw12p1-research](https://github.com/shift/sun50iw12p1-research)** - nghiên cứu H713 gốc + mẫu bảng SoC `sunxi-fel` mà mình sẽ theo cho `0x1911`.
 
 Đứng trên nền tiền nhân chính là tinh thần linux-sunxi: không ai có BSP gốc của hãng, nên mỗi SoC anh em tới được mainline đều nhờ lòng hào phóng của người đi trước. Cảm ơn.
 
