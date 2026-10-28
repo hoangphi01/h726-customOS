@@ -83,3 +83,76 @@ See [../kernel/bringup-strategy.md](../kernel/bringup-strategy.md).
 kernel beacon on it. We built a focus-motor beacon first and only then found the focus is manual, so
 the beacon could never have been seen. The backlight PWM is the next candidate; the fan (safely
 pulsed) is the proven fallback.
+
+## The companion MCU and the ~1-2 s reset window (the real blocker)
+
+Live-testing a bring-up kernel exposed two power-management facts that dominate everything:
+
+- **There is a companion MCU/power controller.** The front **LED is MCU-driven: red = standby/off,
+  blue = on.** The MCU powers the SoC and the light engine and watches for the SoC to finish the
+  vendor boot (a handshake our bare kernel never does). When it does not, the MCU drops the whole
+  device to **standby (red LED, fan off, light off)**. This is *good* for safety: standby turns the
+  light engine off, so a hung bring-up kernel cannot overheat the panel, and recovery is just a
+  power-cycle (see the A/B loop below). The vendor fan GPIO (PL7) is still ours to toggle while the
+  device is on - the MCU does not fight it.
+- **Something resets/stops the SoC ~1-2 s after our kernel starts.** A fan beacon confirmed the
+  kernel runs (one clear fan event = CP1 in the decompressor executed, so **gate #0 passes on the
+  appended-DTB build too**), but then the device goes to standby almost immediately - we never get
+  more than about one beacon cycle. Prime suspect: the vendor U-Boot leaves a **watchdog** running
+  (sun6i-a31 watchdog at `0x02051000`) that a bring-up kernel does not service, so it resets at its
+  short timeout; the MCU then sees the SoC reset and latches to standby. **Caution:** a direct
+  `writel` to the watchdog MODE register from the kernel made things *worse* (no beacon at all),
+  which suggests the watchdog may be **secure-world / OP-TEE owned** (a normal-world write aborts) or
+  needs the key field - do not blindly poke it. Confirming and extending this window is the current
+  blocker; until it is solved, any beacon has only ~1-2 s to produce its signal, so the signal must
+  be a single clear event early (the fan audibly stopping), not a long count.
+
+**Signal shape that works in a short window:** turn the fan fully OFF for ~1 s then ON for ~2 s,
+repeated. The fan audibly stopping is unmistakable even over itself, and starting with OFF puts the
+first clear event inside the window. (Quick sub-second "stutters" are too easy to miss, and a long
+multi-cycle pattern never completes before the reset.)
+
+### The cutoff is EXTERNAL, confirmed by a spin test (2026-10-29)
+
+A diagnostic kernel did one GPIO blip and then `b .` (spin forever) in the decompressor, **without
+touching the fan** - so if the SoC were simply left alone, the device would stay on (U-Boot keeps the
+fan running, splash frozen, blue LED). Instead it went to **RED standby at ~2 s anyway**. So the ~2 s
+cutoff is **not** our kernel crashing or hanging - a spinning SoC is cut just the same. It is an
+**external agent**, almost certainly the **watchdog**: a watchdog reset at ~2 s fits every
+observation, including why the very first gate-#0 test (flashed to the *active* slot `boot_a`) seemed
+to run ~15 s - it was **reset-looping** (boot_a is always bootable, so U-Boot kept re-entering it, the
+MCU saw the SoC "active", and the fan toggled each loop until the panel overheated), whereas a
+one-shot `boot_b` kernel resets once, exhausts its try, and the MCU then drops to standby.
+
+**So the #1 blocker is the watchdog, and it must be handled correctly:** a plain `writel(0, MODE)` from
+the kernel made things *worse* (no beacon at all), so it is likely **secure-world / OP-TEE owned or
+key-protected**. The next move is to find the sun50iw15/sun55i watchdog's real register map + key and
+either disable it from the earliest asm or, if it is secure, **pet it** periodically (write the
+restart/key register) to keep the SoC alive past 2 s - or learn the vendor U-Boot handoff that stops
+it. This is the gate before any further bring-up progress can be observed.
+
+### Speaker beep (PA-enable toggle): does NOT work
+
+The codec's power-amp enable is `pa-pin-0 = <&r_pio PL2 ...>` (active high; PL2 on the R_PIO at
+`0x07022000`, same bank as the fan). Toggling PL2 as a square wave from the decompressor made **no
+sound at all** - so the amp needs more than its enable line (its supply rail and/or a codec signal
+path), which a bare kernel cannot bring up. Android itself would not play UI click sounds through the
+speaker either (only media routes to it). Beep via a bare GPIO is therefore **not** a usable bring-up
+signal here; the fan stays the only one.
+
+## The A/B one-shot test loop (fast, /data-safe, no FEL)
+
+The device is standard Android A/B, and `misc` holds a valid `bootloader_control` struct (AOSP magic
+`BCAB`, CRC32 over the first 28 bytes - verified). This gives a **/data-safe, FEL-free test cycle**:
+
+1. `dd` the test kernel into the **inactive** slot (`boot_b`), leaving `boot_a` (stock) and `/data`
+   untouched.
+2. Write `misc` @ offset 2048 to make `boot_b` win **once**: set slot_b `priority=15, tries=1,
+   successful=0` and lower slot_a `priority` to 14, then fix the CRC32.
+3. Reboot. U-Boot picks `boot_b`, **decrements its tries to 0** (confirmed by reading `misc` back),
+   and runs our kernel.
+4. Observe. Then power-cycle: `boot_b` now has tries=0/unsuccessful, so U-Boot falls back to
+   `boot_a` = stock Android. **No FEL, no `/data` wipe, no re-root** - a loop measured in minutes.
+
+Worst case (if a vendor U-Boot ignored the tries field) is being stuck in `boot_b` = the same FEL
+recovery we already have, so there is no downside. This loop is what makes blind iteration bearable.

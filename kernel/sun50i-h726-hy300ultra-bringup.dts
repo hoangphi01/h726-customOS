@@ -20,6 +20,25 @@
 
 /dts-v1/;
 
+/*
+ * Secure-world and firmware reservations copied VERBATIM from the stock FDT
+ * (/sys/firmware/fdt). An appended DTB does not get U-Boot's memory fixups,
+ * so without these the kernel would allocate over OP-TEE / bl31 / the splash
+ * framebuffer and abort in setup_arch. bl31 (0x48000000) is also kept as a
+ * reserved-memory node below.
+ *   0x48200000+0x200000, 0x48700000+0x400000, 0x48600000+0x100000  : OP-TEE
+ *   0x7a576000+0x1c2000, 0x7a739000+0x1c2000                       : secure
+ *   0x7a1f1000+0x384000                                            : fastlogo fb
+ *   0x43300000+0x12f1caa                                           : loader buffer
+ */
+/memreserve/	0x0000000048200000 0x0000000000200000;
+/memreserve/	0x0000000048700000 0x0000000000400000;
+/memreserve/	0x0000000048600000 0x0000000000100000;
+/memreserve/	0x000000007a576000 0x00000000001c2000;
+/memreserve/	0x000000007a739000 0x00000000001c2000;
+/memreserve/	0x000000007a1f1000 0x0000000000384000;
+/memreserve/	0x0000000043300000 0x00000000012f1caa;
+
 / {
 	model = "Magcubic HY300 Ultra Projector (bring-up)";
 	compatible = "magcubic,hy300ultra", "allwinner,sun50i-h726";
@@ -28,6 +47,18 @@
 	#size-cells = <2>;
 
 	interrupt-parent = <&gic>;
+
+	reserved-memory {
+		#address-cells = <2>;
+		#size-cells = <2>;
+		ranges;
+
+		/* ARM Trusted Firmware (bl31), from the stock reserved-memory. */
+		bl31@48000000 {
+			reg = <0x0 0x48000000 0x0 0x100000>;
+			no-map;
+		};
+	};
 
 	chosen {
 		/* cmdline comes from CONFIG_CMDLINE (CMDLINE_FORCE). */

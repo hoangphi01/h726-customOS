@@ -1,149 +1,107 @@
 // SPDX-License-Identifier: GPL-2.0
 /*
  * HY300 Ultra (H726 / sun50iw15) C-side boot checkpoints for no-UART
- * bring-up. The cooling fan runs loud the whole time, so an audible motor
- * tick is useless; instead we step the focus MOTOR through its four phases
- * to physically move the lens, which makes the PROJECTED IMAGE visibly
- * defocus then refocus - a "breath" that is obvious even over the fan:
+ * bring-up. The signal is the COOLING FAN: brief OFF->ON pulses that the
+ * operator hears as a stutter in the (loud, constant) fan. It is the one
+ * channel proven observable on this unit - the motor is inaudible and does
+ * not move the manual-focus image, the status LED is not a SoC GPIO, and
+ * reading the vendor /sys/class/prj backlight reboots the device.
  *
- *   - early_initcall  -> 2 breaths: the kernel reached the init thread
- *                        (setup_arch + mm + sched + timers are all up).
- *   - late_initcall   -> a steady breath every ~1.5 s, forever: the kernel
- *                        is fully alive and the scheduler/timers are ticking.
+ *   - early_initcall  -> 3 fan stutters, then returns: the kernel reached the
+ *                        init thread (setup_arch + mm + sched + timers are up).
+ *   - late_initcall   -> stutter forever (blocking): the kernel is fully alive.
+ *                        It deliberately never returns, so boot never reaches
+ *                        the (rootfs-less) panic; the fan just keeps stuttering.
  *
- * So watch the projected image: a couple of focus breaths then nothing means
- * it reached init but hung at late init; a never-ending slow focus breathing
- * means it booted. (The earlier assembly beacons CP1/CP2 only tap one coil -
- * a tiny jerk, hard to see over the fan - so the C breaths are the signal.)
+ * Read it as: a few stutters then steady fan = reached init but stopped;
+ * endless stuttering = booted. The early assembly beacons CP1/CP2 add 1 and 2
+ * stutters before this.
  *
- * !!! SAFETY: only ever drives the focus-MOTOR phases (PH6/PH7/PH13/PH18).
- * Never the cooling fan (PL7 / PWM0): turning the fan off with the light
- * engine on overheats the panel. The motor has no thermal role. We poke the
- * PIO directly (not via the gpio/pinctrl API) so the beacon works before any
- * driver has probed, and read-modify-write the DAT register so only the four
- * motor bits change.
+ * SAFETY: a pulse turns the fan off only briefly, with interrupts disabled so
+ * nothing preempts the off window, and ALWAYS restores it ON. The fan's
+ * resting state is ON. See h726-blink.h for the thermal rationale.
  */
 
 #include <linux/init.h>
 #include <linux/io.h>
 #include <linux/delay.h>
-#include <linux/kthread.h>
+#include <linux/irqflags.h>
 #include <linux/err.h>
 
-#define PIO_BASE	0x02000000	/* main pin controller */
-#define PIO_SIZE	0x400
-#define PH_BANK		0xFC		/* PH = bank 7, 7 * 0x24 */
-#define PH_CFG0		(PH_BANK + 0x00) /* pins 0-7   */
-#define PH_CFG1		(PH_BANK + 0x04) /* pins 8-15  */
-#define PH_CFG2		(PH_BANK + 0x08) /* pins 16-23 */
-#define PH_DAT		(PH_BANK + 0x10)
+#define RPIO_BASE	0x07022000	/* R_PIO; PL = bank 0 at this base */
+#define RPIO_SIZE	0x400
+#define PL_CFG0		0x00		/* pins 0-7 mux */
+#define PL_DAT		0x10
+#define PL7_MUX_MASK	0xF0000000u	/* pin 7 nibble [31:28] */
+#define PL7_MUX_OUT	0x10000000u	/* 0x1 = output */
+#define PL7_BIT		(1u << 7)	/* fan enable: high = ON */
 
-/* Focus-motor unipolar phases on the PH bank (from the device GPIO map). */
-#define PH6_BIT		(1u << 6)
-#define PH7_BIT		(1u << 7)
-#define PH13_BIT	(1u << 13)
-#define PH18_BIT	(1u << 18)
-#define PHASE_ALL	(PH6_BIT | PH7_BIT | PH13_BIT | PH18_BIT)
+#define OFF_MS		1000		/* fan off ~1 s (audibly stops) */
+#define ON_MS		2000		/* fan on ~2 s (spins back up) */
 
-/* One electrical revolution: phase 0,1,2,3 = PH13, PH18, PH6, PH7. */
-static const u32 phase_seq[4] = { PH13_BIT, PH18_BIT, PH6_BIT, PH7_BIT };
-
-#define SWEEP_STEPS	200		/* steps per direction (tune for travel) */
-#define STEP_US		2200		/* per-step dwell; a stepper needs a few ms */
-
-static void __iomem *h726_pio;
+static void __iomem *h726_rpio;
 
 static int h726_map(void)
 {
-	if (!h726_pio)
-		h726_pio = ioremap(PIO_BASE, PIO_SIZE);
-	return h726_pio ? 0 : -ENOMEM;
+	if (!h726_rpio)
+		h726_rpio = ioremap(RPIO_BASE, RPIO_SIZE);
+	return h726_rpio ? 0 : -ENOMEM;
 }
 
-static void h726_motor_init(void)
+static void h726_fan(bool on)
 {
-	u32 v;
+	u32 v = readl(h726_rpio + PL_DAT);
 
-	v = readl(h726_pio + PH_CFG0);		/* PH6, PH7 -> output (0x1) */
-	v &= ~0xFF000000u;
-	v |= (0x1u << 24) | (0x1u << 28);
-	writel(v, h726_pio + PH_CFG0);
-
-	v = readl(h726_pio + PH_CFG1);		/* PH13 -> output */
-	v &= ~0x00F00000u;
-	v |= (0x1u << 20);
-	writel(v, h726_pio + PH_CFG1);
-
-	v = readl(h726_pio + PH_CFG2);		/* PH18 -> output */
-	v &= ~0x00000F00u;
-	v |= (0x1u << 8);
-	writel(v, h726_pio + PH_CFG2);
+	if (on)
+		v |= PL7_BIT;
+	else
+		v &= ~PL7_BIT;
+	writel(v, h726_rpio + PL_DAT);
 }
 
-static void h726_motor_drive(u32 phase_mask)
+static void h726_fan_output(void)
 {
-	u32 v = readl(h726_pio + PH_DAT);
+	u32 v = readl(h726_rpio + PL_CFG0);
 
-	v = (v & ~PHASE_ALL) | phase_mask;	/* only the four motor bits */
-	writel(v, h726_pio + PH_DAT);
+	v &= ~PL7_MUX_MASK;
+	v |= PL7_MUX_OUT;
+	writel(v, h726_rpio + PL_CFG0);
+	h726_fan(true);			/* start from the ON state */
 }
 
-static void h726_sweep(bool forward)
+/* One stutter. IRQs off across the off window so nothing preempts it. */
+static void h726_stutter(void)
 {
-	int i, idx;
+	unsigned long flags;
 
-	for (i = 0; i < SWEEP_STEPS; i++) {
-		idx = forward ? (i & 3) : (3 - (i & 3));
-		h726_motor_drive(phase_seq[idx]);
-		usleep_range(STEP_US, STEP_US + 300);
-	}
+	local_irq_save(flags);
+	h726_fan(false);
+	mdelay(OFF_MS);
+	h726_fan(true);
+	local_irq_restore(flags);
+	mdelay(ON_MS);			/* fan running in the gap */
 }
 
-/* One visible focus breath: sweep out, sweep back, de-energize. */
-static void h726_breath(void)
-{
-	h726_sweep(true);
-	h726_sweep(false);
-	h726_motor_drive(0);			/* coils off between breaths */
-}
-
-static void h726_beacon(unsigned int breaths)
-{
-	unsigned int i;
-
-	for (i = 0; i < breaths; i++) {
-		h726_breath();
-		msleep(400);
-	}
-}
-
-/* CP: reached the init thread. Two focus breaths. */
+/*
+ * Reached the init thread (setup_arch + mm + sched + timers are up). This is
+ * already the big milestone - it means the memreserve/DT fix let the kernel
+ * through setup_arch. Stutter the fan FOREVER so it cannot be missed: a short
+ * three-stutter "hello", then a slow endless stutter. It never returns (there
+ * is no rootfs to go to), so the fan just keeps stuttering = the kernel is
+ * alive here. If instead you hear only the early CP1/CP2 taps then silence,
+ * it reached vmlinux but hung in setup_arch.
+ */
 static int __init h726_cp_init(void)
 {
+	int i;
+
 	if (h726_map())
 		return 0;
-	h726_motor_init();
-	h726_beacon(2);
+	h726_fan_output();
+	for (i = 0; i < 3; i++)		/* "hello": three quick-ish stutters */
+		h726_stutter();
+	for (;;)			/* then alive-forever */
+		h726_stutter();
 	return 0;
 }
 early_initcall(h726_cp_init);
-
-/* Steady heartbeat: kernel fully alive (scheduler + timekeeping running). */
-static int h726_heartbeat_fn(void *unused)
-{
-	while (!kthread_should_stop()) {
-		h726_breath();
-		msleep(1200);
-	}
-	return 0;
-}
-
-static int __init h726_heartbeat_start(void)
-{
-	if (h726_map())
-		return 0;
-	h726_motor_init();
-	kthread_run(h726_heartbeat_fn, NULL, "h726-heartbeat");
-	return 0;
-}
-late_initcall(h726_heartbeat_start);

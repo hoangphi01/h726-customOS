@@ -165,10 +165,17 @@ The H713 sibling already flashed a prebuilt PHH Treble ARM32 GSI and documented 
   observable signal - but the beacon's signal was invalid, not necessarily the kernel.** The focus-motor
   beacon cannot be seen on this unit: focus is a MANUAL wheel, so the autofocus motor does not visibly move
   the image, and it is inaudible over the fan ([re/bringup-signals.md](re/bringup-signals.md)). So the test is
-  inconclusive about how far the kernel got. Re-selecting an observable signal: the backlight-brightness PWM
-  (visible + thermally safe, register to come from the static FDT) is the next candidate, with a safely-pulsed
-  fan as the proven fallback. Then reflash + read, then fix CCU/pinctrl offsets wherever it stalls. A UART
-  console remains the real accelerator.
+  inconclusive about how far the kernel got. **Then (2026-10-29) pivoted to a FAN beacon (PL7, audible) and a
+  fast /data-safe A/B one-shot test loop** (flash `boot_b`, arm `misc` bootloader_control, power-cycle falls
+  back to stock `boot_a` - no FEL, no `/data` wipe). Confirmed: **gate #0 passes** (the fan beacon fires), but
+  **an external ~2 s cutoff resets the SoC** - proven by a spin test (a kernel that merely spins is cut at ~2 s
+  all the same), so it is NOT our kernel crashing and NOT the appended DTB (a plain-zImage build behaves
+  identically). Prime suspect: the **watchdog** the vendor U-Boot leaves running (a direct `writel` to disable
+  it made things worse - likely secure/OP-TEE-owned or key-protected). A speaker-beep via the PA-enable GPIO
+  was tried and is **silent**. **Next session's #1 task: handle the watchdog** (correct sun50iw15 register map +
+  key, or pet it from early asm, or find the U-Boot handoff) so the kernel runs past 2 s and can be observed;
+  then fix CCU/pinctrl offsets. Full detail in [re/bringup-signals.md](re/bringup-signals.md). A UART console
+  remains the real accelerator.
 - [ ] Phase B4: driver bring-up loop by dependency order (see [re/README.md](re/README.md)), reusing the Mali / CedarX / AIC8800 blobs.
 
 **Track A (deferred fallback), build the clean userspace:**
