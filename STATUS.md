@@ -53,6 +53,24 @@ The extracted `system.dtb` (from `/sys/firmware/fdt`, valid FDT) was decompiled 
 | Reuse with vendor blob | Mali (midgard kbase + `libGLES_mali.so`), Cedar VE (`sunxi-cedar-ve` + CedarX `.so`/firmware), AIC8800 Wi-Fi/BT (`rwnx` + firmware) | Port the open kernel glue, keep the closed userspace. |
 | New: write or RE from the vendor `.ko` | `vs,display`, `vs,osd`, `vs,trid-audio-bridge`, `allwinner,sunxi-tvtop`, `allwinner,tvdisp_top`, `tcon`, `lvds0`, `allwinner,z20hd720m` panel, `allwinner,ksc100` keystone | The genuine port target. RE with REA/Ghidra against the DTS reg/clock/irq map above. |
 
+### Gold mine, the modules themselves (extracted)
+
+The running kernel loads its drivers as modules, split across two stores. `/vendor` and `/vendor_dlkm` hold 65 `.ko` (the second-stage set: `aic8800_*`, `mali_kbase.ko`, `vs-display.ko`, `vs-osd.ko`, the ASoC `snd_soc_sunxi_*`, sensors, `motor-limiter.ko`, `stmvl53l1.ko` which is the ToF autofocus sensor, and so on). The first-stage display stack is not on any mounted filesystem; it lives in the **`vendor_boot` ramdisk** (`vendor_boot_a` = `mmcblk0p7`, a v4 `VNDRBOOT` image, LZ4 cpio), because it has to paint the boot logo before `/vendor` mounts. Extracted from that ramdisk, with the exact RE targets:
+
+| Module | Size | Role |
+|---|---|---|
+| `tvpanel.ko` | 167 KB | panel/timing management (largest, panel tables) |
+| `sunxi-ve.ko` | 81 KB | Cedar video-engine kernel glue (CedarX `.so` do the rest) |
+| `sunxi_ksc.ko` | 68 KB | hardware keystone-correction engine |
+| `sunxi_tvtop.ko` + `_adc.ko` | 30 + 13 KB | TV front-end / capture top |
+| `panel_lvds_gen.ko` / `panel_dsi_gen.ko` | 19 / 24 KB | generic LVDS / DSI panel glue |
+| `z20hd720m.ko` | 19 KB | the specific 720p LVDS imager |
+| `backlight.ko`, `hidtvreg_dev.ko`, `sunxi_addr.ko` | 26 / 9 / 20 KB | backlight, TV reg HID, address manager |
+
+`vs-display.ko` (115 KB) and `vs-osd.ko` (150 KB) come from `/vendor/lib/modules`. All are small enough to reverse in Ghidra against the DTS reg/clock/irq map.
+
+**Exact build string to match (Track B):** `vermagic = 5.15.167-ge72cb82a460c-dirty SMP preempt mod_unload modversions ARMv7 p2v8`, built with **Android clang 17.0.2 (r487747c) + LTO**. Two consequences: the tree is `-dirty` (vendor-modified, no clean public source, which is why we mine), and `modversions` means symbol CRCs are enforced, so individual replacement modules would need matching `Module.symvers`; Track B builds the whole kernel from source, which sidesteps that.
+
 ## Verdict
 
 - **Track A (clean userspace) is reachable:** build a 32-bit LineageOS 21 (arm) GSI from source, flash it to `system_a`, keep the vendor kernel, `/vendor` and `/product`. Clean userspace, vendor kernel.
