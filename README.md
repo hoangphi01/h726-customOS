@@ -33,7 +33,8 @@ Where this is, most recent first. Track B (a from-source kernel) is the primary 
 | B1 | Reverse-engineer the display and keystone drivers into register maps ([re/](re/)) | Done, 8 notes |
 | B2 | A buildable kernel base: board device tree, `defconfig`, build script; builds mainline 6.16.7 into a kernel `Image` + DTB ([kernel/](kernel/)) | Done, compiles and builds |
 | B2 | sun50iw15 CCU + pinctrl drivers | In progress, core subset compiles |
-| B3 | Boot bring-up (blind via pstore / USB dmesg; no UART yet) | Not started |
+| Gate #0 | Boot handoff: stock is AArch32, arm64 `Image` cannot be entered by the vendor chain ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | Blocking, deciding 32-bit vs AArch64 |
+| B3 | Boot bring-up (GPIO heartbeat; loader is PhoenixSuit, no UART yet) | Not started |
 | Track A | LineageOS GSI (deferred fallback) | Not started |
 
 **Builds today:** the device tree, the config, and our sun50iw15 CCU and pinctrl drivers, all into a mainline 6.16.7 kernel `Image` via `kernel/build.sh`. **Not working yet:** booting, which needs the CCU/pinctrl register offsets confirmed on hardware and, ideally, a serial console. The reverse-engineering groundwork (the display/keystone register maps) is what makes the driver work possible.
@@ -97,7 +98,8 @@ Firmware gốc là bản clone white-label dính họ malware BadBox và framewo
 | B1 | Dịch ngược driver display + keystone thành register map ([re/](re/)) | Xong, 8 note |
 | B2 | Nền kernel build-được: device tree, `defconfig`, build script; build mainline 6.16.7 ra kernel `Image` + DTB ([kernel/](kernel/)) | Xong, compile + build |
 | B2 | Driver CCU + pinctrl sun50iw15 | Đang làm, core subset compile |
-| B3 | Bring-up boot (mù qua pstore / USB dmesg; chưa có UART) | Chưa bắt đầu |
+| Gate #0 | Handoff boot: stock là AArch32, `Image` arm64 chưa được chuỗi vendor nhảy vào ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | Đang chặn, đang quyết 32-bit vs AArch64 |
+| B3 | Bring-up boot (GPIO heartbeat; loader là PhoenixSuit, chưa có UART) | Chưa bắt đầu |
 | Track A | LineageOS GSI (fallback hoãn) | Chưa bắt đầu |
 
 **Build được hiện tại:** device tree, config, và driver CCU + pinctrl sun50iw15 của ta, tất cả biên dịch vào kernel `Image` mainline 6.16.7 qua `kernel/build.sh`. **Chưa chạy:** boot, cần xác nhận offset register CCU/pinctrl trên phần cứng và lý tưởng là có serial console. Phần RE nền (register map display/keystone) chính là cái làm việc viết driver trở nên khả thi.

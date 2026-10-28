@@ -62,7 +62,9 @@ So the device tree names the controllers as `allwinner,sun50iw15-ccu` / `-pinctr
 
 ## Status
 
-Phase B2 is producing real, buildable artifacts (DTS + defconfig + build scripts, all verified to compile/build). The honest limit: this **compiles and builds but will not boot** until the sun50iw15 CCU and pinctrl drivers exist, because without them no clocks or pins come up. That driver work is the next kernel task, after which Phase B3 (boot, debugged blind through pstore / USB dmesg / GPIO heartbeat, since there is no UART yet) can begin. See [../STATUS.md](../STATUS.md).
+Phase B2 is producing real, buildable artifacts (DTS + defconfig + CCU/pinctrl drivers + build scripts, all verified to compile/build). The honest limit is bigger than the CCU: see **[bringup-strategy.md](bringup-strategy.md)**.
+
+Before the CCU offsets matter there is **gate #0, the boot handoff**: the stock kernel is AArch32 (verified by inspecting `boot_a`), the whole vendor stack runs the Cortex-A53 in 32-bit mode, and entering AArch64 on this SoC is unsolved (`sunxi-fel` reports `0x1911` unknown, `sunxi-fel uboot` fails `Unexpected SCTLR`, the RVBAR warm-reset to AArch64 hangs). So the **arm64** `Image` built here cannot be entered by the vendor boot chain yet. The next decision is the fork in [bringup-strategy.md](bringup-strategy.md): build the kernel 32-bit (`ARCH=arm`) to match the boot chain, or build an AArch64 boot chain. Blind bring-up then uses a GPIO heartbeat (the `sunxi-fel` RAM-load loop is not available on 0x1911; the loader is PhoenixSuit over FEL). A UART console is the real unlock. See [../STATUS.md](../STATUS.md).
 
 ## Planned contents
 
