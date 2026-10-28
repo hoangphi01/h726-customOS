@@ -90,15 +90,14 @@ it does **not** trip the AVB/encryption `/data` wipe that a full recovery flash 
 
 ## Reading the result
 
-Count the focus-motor ticks at power-on, then watch:
+The fan runs loud, so **watch the projected image, do not listen.** The C beacons step the focus
+motor, which visibly defocuses then refocuses the projected splash (a "breath"):
 
-| What you see | What it means | Next |
+| What you see on the projected image | What it means | Next |
 |---|---|---|
-| 1 tick | Decompressor ran = **gate #0** (already known to pass). | - |
-| 2 ticks | Entered `vmlinux` (past `__create_page_tables`, MMU about to come on). | - |
-| 3 ticks | Reached the init thread (setup_arch + mm + sched + timers up). | - |
-| **steady ~1 Hz ticking, forever** | **Kernel fully alive.** Scheduler + timekeeping running. | Switch to the full DT, bring up a console/driver. |
-| bursts up to N then silence | Hung just after beacon N. | Add a finer beacon in that gap, rebuild, retry. |
+| No focus movement at all | Hung before init. (The two early coil-tap beacons are too faint to see over the fan, so this just means "somewhere before the init thread"; gate #0 itself already passed.) | Add a visible beacon earlier, retry. |
+| **Two focus breaths, then nothing** | Reached the init thread (setup_arch + mm + sched + timers up), then hung at late init. | Instrument between early and late init. |
+| **A slow focus breath every ~1.5 s, forever** | **Kernel fully alive.** Scheduler + timekeeping running. | Switch to the full DT, bring up a console/driver. |
 
 The device will **not** boot into Android with this kernel (no rootfs/console yet); reflash to recover.
 

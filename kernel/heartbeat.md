@@ -2,11 +2,16 @@
 
 How we see where a from-source kernel gets to on the H726 when there is no UART. The
 only output channel is a GPIO: a direct `writel` to the pin controller at `0x02000000`
-(always-on MMIO, needs no clock), which ticks the **focus motor** (phase PH13). Code
-dropped in at successive boot stages ticks the motor a distinct number of times; the
-highest count observed is the furthest the boot got. A steady repeating tick is the
-"it booted" signal. This supersedes the single gate-#0 heartbeat (which is now just the
-first beacon).
+(always-on MMIO, needs no clock), which drives the **focus motor**.
+
+**The fan runs loud the whole time, so the signal must be seen, not heard.** The C
+beacons step the focus motor through its four phases (PH13/PH18/PH6/PH7), which moves the
+lens and makes the **projected image visibly defocus then refocus** - a "breath" that is
+obvious over the fan. Watch the projected splash: a couple of focus breaths then nothing
+means it reached init but hung; a never-ending slow focus breathing means it booted. (The
+two early assembly beacons only tap one coil - a faint jerk, hard to see - so the C breaths
+are the real signal; a later build can make the early ones sweep too.) This supersedes the
+single gate-#0 heartbeat (now just the first beacon).
 
 ## !!! Safety: never drive the cooling fan !!!
 
@@ -20,17 +25,17 @@ for the whole run, which is thermally safe even if the kernel hangs. See
 
 ## The ladder (Build A)
 
-| Ticks | Where | Proves |
+| Signal | Where | Proves |
 |---|---|---|
-| 1 | decompressor entry (`arch/arm/boot/compressed/head.S`) | **Gate #0:** U-Boot entered our kernel (already passed 2026-10-28). |
-| 2 | kernel proper, after `__create_page_tables` (`arch/arm/kernel/head.S`, MMU still off) | The decompressor handed off into `vmlinux`. |
-| 3 | `early_initcall` (C) | Reached the init thread: `setup_arch` + memory + scheduler + timers are up. |
-| steady ~1 Hz, forever | `late_initcall` kthread | **Kernel fully alive:** the scheduler and timekeeping are running. |
+| CP1: one coil tap (faint) | decompressor entry (`arch/arm/boot/compressed/head.S`) | **Gate #0:** U-Boot entered our kernel (already passed 2026-10-28). |
+| CP2: one coil tap (faint) | kernel proper, after `__create_page_tables` (`arch/arm/kernel/head.S`, MMU still off) | The decompressor handed off into `vmlinux`. |
+| **2 focus breaths** (image defocus/refocus) | `early_initcall` (C) | Reached the init thread: `setup_arch` + memory + scheduler + timers are up. |
+| **steady focus breath every ~1.5 s, forever** | `late_initcall` kthread | **Kernel fully alive:** the scheduler and timekeeping are running. |
 
-So: count the ticks, then watch for the steady heartbeat. You saw bursts 1,2,3 then nothing
-means it hung between reaching init and late init; a steady heartbeat means success. Counts
-2 and 3 are close by ear, so the two unambiguous reads are "did it get past 1 (gate #0)" and
-"did it reach the steady heartbeat".
+So the reliable reads, watching the projected image: **no focus movement at all** = hung before
+init (CP1/CP2 taps are too faint to see over the fan, so this just means "somewhere before init");
+**two breaths then nothing** = reached init but hung at late init; **endless slow breathing** =
+success. If the early/late split matters, a follow-up build makes CP1/CP2 sweep too.
 
 ## How it is built
 
@@ -39,9 +44,11 @@ means it hung between reaching init and late init; a steady heartbeat means succ
   the decompressor (registers free) and kernel-proper `head.S` (only `r0/r3/r6/r7` free). It uses
   only `movw/movt` immediates and PC-relative branches, so it is position-independent with the MMU
   on or off.
-- [checkpoint/h726-checkpoint.c](checkpoint/h726-checkpoint.c): the C side. An `early_initcall`
-  ticks 3 times; a `late_initcall` starts a kthread that ticks ~1 Hz forever. It `ioremap`s the PIO
-  and pokes PH13 directly (not through the gpio/pinctrl API) so it works before any driver probes.
+- [checkpoint/h726-checkpoint.c](checkpoint/h726-checkpoint.c): the C side. It steps the four focus-motor
+  phases (PH13/PH18/PH6/PH7) to sweep the lens out and back = one visible focus breath. An `early_initcall`
+  does 2 breaths; a `late_initcall` kthread does one breath every ~1.5 s forever. It `ioremap`s the PIO and
+  read-modify-writes only the four motor bits (not via the gpio/pinctrl API), so it works before any driver
+  probes and disturbs nothing else.
 - [build.sh](build.sh) injects CP1/CP2 into the two `head.S` files (idempotently) and builds the
   C file in, under `HEARTBEAT=1`.
 

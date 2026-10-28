@@ -161,9 +161,14 @@ The H713 sibling already flashed a prebuilt PHH Treble ARM32 GSI and documented 
   an authoritative appended device tree (`CONFIG_ARM_APPENDED_DTB` + a minimal bring-up DTS that overrides
   U-Boot's), `nr_cpus=1`, and a de-risked CCU (no `CLK_IS_CRITICAL`). The `zImage-dtb` (~11.8 MB) fits the
   stock `boot_a` slot (~38.6 MB). See [kernel/heartbeat.md](kernel/heartbeat.md) and
-  [kernel/bringup-strategy.md](kernel/bringup-strategy.md). Next: flash Build A and read the beacons, then
-  hardware-correct the CCU/pinctrl offsets wherever a beacon shows a clock-dependent stall. A UART console
-  would still be the key accelerator (`earlycon` = text instead of tick counts).
+  [kernel/bringup-strategy.md](kernel/bringup-strategy.md). **Flashed by `dd` to `boot_a` 2026-10-28: no
+  observable signal - but the beacon's signal was invalid, not necessarily the kernel.** The focus-motor
+  beacon cannot be seen on this unit: focus is a MANUAL wheel, so the autofocus motor does not visibly move
+  the image, and it is inaudible over the fan ([re/bringup-signals.md](re/bringup-signals.md)). So the test is
+  inconclusive about how far the kernel got. Re-selecting an observable signal: the backlight-brightness PWM
+  (visible + thermally safe, register to come from the static FDT) is the next candidate, with a safely-pulsed
+  fan as the proven fallback. Then reflash + read, then fix CCU/pinctrl offsets wherever it stalls. A UART
+  console remains the real accelerator.
 - [ ] Phase B4: driver bring-up loop by dependency order (see [re/README.md](re/README.md)), reusing the Mali / CedarX / AIC8800 blobs.
 
 **Track A (deferred fallback), build the clean userspace:**

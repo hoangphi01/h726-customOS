@@ -20,4 +20,11 @@ All the vendor display drivers are loadable modules, not built into `vmlinux`; t
 
 `sunxi_tvtop` owns the shared clocks and resets. The DE top in `tvpanel` (`tvdisp_top`, `tvdisp@5500000`) is the routing/mux + PLL: its registers (AFBD `0x04`, SVP `0x40`, TCON/DSI `0x8C`+`0x138`, KSC `0xA0`) gate each sub-block onto the panel, driven by `vs-display`/`vs-osd` through the exported `sunxi_tvdisp_top_*` symbols. `vs-display` maps and sequences the capture + scaler/deinterlace/NR (`svp`) + AFBD windows; the output goes through TCON -> LVDS (`tvpanel`) to the `z20hd720m` imager. `vs-osd` composites the UI framebuffer as a CRTC/plane. Both the video path and the UI plane route through the `ksc` keystone warp before the panel, so the whole projected image is geometry-corrected. The one genuinely proprietary, not-in-kernel part is the `svp`/`cap` pixel-processing programming inside `vs-display`, which runs from the userspace display blob.
 
+## Bring-up infrastructure (not a display driver)
+
+| Note | Role |
+|---|---|
+| [ccu-sun50iw15.md](ccu-sun50iw15.md) | the clock tree read live off the device (the CCU driver's source of truth) |
+| [bringup-signals.md](bringup-signals.md) | what output channels exist for **blind (no-UART) bring-up** and which are usable as a boot beacon: the focus motor (dead - manual focus), `/sys/class/prj` (reboots the device on read), the backlight PWM (candidate), the fan (proven but thermal). Includes the vendor stepper-motor interface (`motor_ctr`: phase pins + half-step tables). |
+
 See [../STATUS.md](../STATUS.md) for the project state and [../PLAN.md](../PLAN.md) for the roadmap.

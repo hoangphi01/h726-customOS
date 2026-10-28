@@ -54,7 +54,30 @@ the new remove-sed did not match it.
   legacy markers), and every Makefile append is `grep -q ... ||` guarded. Re-running `build.sh` must
   be safe and converge to the same tree.
 
-## 6. Pointers to the on-device lessons (one home each, in TROUBLESHOOTING.md)
+## 6. Validate a signal moves something observable BEFORE building a beacon on it
+
+For the no-UART bring-up we built a kernel beacon that steps the **focus motor** to make the
+projected image "breathe", then flashed it - and saw nothing. Only afterwards did we learn (from the
+printed manual and live probing) that **focus on this model is manual** (a physical focus wheel), so
+the autofocus motor does not visibly change the image, and the motor is inaudible over the fan. The
+beacon could never have been seen; the flash + recovery cycle (and a `/data` wipe) was wasted.
+
+- **Fix / rule:** before committing a kernel beacon to a signal, confirm from the running device that
+  driving that hardware produces a change a human can actually perceive, under real conditions (fan
+  on, room lighting). Full write-up and the signal table are in [re/bringup-signals.md](re/bringup-signals.md).
+
+## 7. Reading a vendor driver's sysfs attributes can reboot the device
+
+Probing `/sys/class/prj/*` (the vendor `hidtvreg`/projector class: `bl_duty`, temps, `lcdadc`, ...)
+**rebooted the device**, reproduced twice. The read handlers do a fragile hardware/I2C/ADC access
+that faults the kernel. A `cat` is not free on a vendor BSP.
+
+- **Fix / rule:** treat vendor sysfs as potentially destructive on read. Pull hardware facts from the
+  **static device tree** (`/sys/firmware/fdt`, `/proc/device-tree`) - which is just reading an FDT
+  blob and is safe - not from the driver's attribute handlers. When a probe coincides with a reboot,
+  stop and change method rather than retrying.
+
+## 8. Pointers to the on-device lessons (one home each, in TROUBLESHOOTING.md)
 
 Not repeated here, but part of the same hard-won set:
 
