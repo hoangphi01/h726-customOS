@@ -2,7 +2,7 @@
 
 Living status of the project. Updated as reality changes. See [PLAN.md](PLAN.md) for the roadmap.
 
-**Phase:** **Track B is the primary focus; Track A is a deferred fallback.** Phase B1 done (the new-driver register maps are in `re/`; the whole display stack is in modules, no `vmlinux` RE needed). Next: Phase B2 (buildable kernel base: mainline linux-sunxi + defconfig from `config.gz` + DTS to source + sun50iw15 CCU/pinctrl/DRAM). No UART yet, so Track B debugs blind (pstore + USB dmesg dump + GPIO heartbeat).
+**Phase:** **Track B is the primary focus; Track A is a deferred fallback.** Phase B1 done (new-driver register maps in `re/`). Phase B2 in progress (see [kernel/README.md](kernel/README.md)): base decided (mainline 6.16.x, anchored on the shift H713 port, H6-compatible, no Nix), build host up, the anchor's H713 DTB built as a sanity pass. Next in B2: convert the vendor DTS to `sun50i-h726-hy300ultra.dts` + `h726_defconfig` + the CCU/pinctrl H6 gap, then the kernel Image. No UART yet, so booting (B3) debugs blind (pstore + USB dmesg dump + GPIO heartbeat).
 **Last updated:** 2026-10-28.
 
 ## What is working
