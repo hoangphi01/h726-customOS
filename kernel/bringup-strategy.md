@@ -61,8 +61,16 @@ A 3.3V USB-UART adapter (about 2-5 USD) on the board's debug pads gives log outp
 ## Order of attack
 
 1. ~~Decide the fork~~ Done: Branch 1 (32-bit `ARCH=arm`); the `zImage` builds with our drivers in.
-2. Get the kernel to run one GPIO heartbeat through the vendor boot chain: insert an early `writel` to a known-safe, visible pin (the fan enable or an LED) at the start of 32-bit execution, pack the `zImage` into `boot_a`, flash via PhoenixSuit, and watch. A reaction means gate #0 is passed. (This step needs the physical device.)
-3. Only then tune the CCU/pinctrl offsets (hardware-confirm the A523-hypothesis values in [../re/ccu-sun50iw15.md](../re/ccu-sun50iw15.md)).
+2. ~~Confirm gate #0~~ **Done (2026-10-28): gate #0 is PASSED.** A GPIO heartbeat in the decompressor, flashed to `boot_a` by `dd` on the rooted device, ran: the vendor U-Boot entered our 32-bit kernel and the CPU executed it. Branch 1 is proven on hardware.
+3. **Now: tune the CCU/pinctrl offsets** (hardware-confirm the A523-hypothesis values in [../re/ccu-sun50iw15.md](../re/ccu-sun50iw15.md)) so the kernel boots past the heartbeat.
 4. Bring up drivers in dependency order (see [../re/README.md](../re/README.md)).
+
+### Safety lesson from the gate-#0 run (important)
+
+The heartbeat that confirmed gate #0 drove the cooling **fan** off (the fan cut out, which is how we knew our code ran). But the vendor U-Boot's splash was still being projected, so the **light engine was on with no cooling**, and after about 15 s the imager panel overheated (a dark bloom spread from the centre of the projected image; power was cut immediately and it is expected to recover once cool). **Rules for any on-device bring-up from now on:**
+
+- **Never drive the fan**, and never leave the device hung with the light engine on and no cooling. Use the **focus motor** (no thermal role) or, better, a UART console (read-only) as the signal.
+- Keep hang time short: recover promptly (FEL + reflash the rooted image) rather than letting a hung kernel sit.
+- The committed heartbeat ([heartbeat/heartbeat-h726.S](heartbeat/heartbeat-h726.S)) is retargeted to the motor and documented accordingly.
 
 Everything in Phase B2 so far (device tree, defconfig, CCU + pinctrl drivers) compiles and is correct as a hardware description; it just cannot boot until gate #0 is cleared.

@@ -1,8 +1,12 @@
 # Flashing the heartbeat test (step by step)
 
-How to put the 32-bit `zImage` (with the gate-#0 red-LED heartbeat) onto the device and read the result. The goal of this run is one yes/no answer: **does the vendor U-Boot enter our kernel?** See [../bringup-strategy.md](../bringup-strategy.md) and [../heartbeat.md](../heartbeat.md).
+How to put the 32-bit `zImage` (with the gate-#0 heartbeat) onto the device and read the result. The goal is one yes/no answer: **does the vendor U-Boot enter our kernel?**
 
-Nothing here can brick the device: FEL stays available and the stock / rooted image reflashes.
+> **This test already succeeded (2026-10-28): gate #0 is PASSED** (see [../bringup-strategy.md](../bringup-strategy.md)). This page is kept as the procedure, to re-run if ever needed.
+>
+> **Safety lesson from that run:** the heartbeat must **never drive the cooling fan**. The first version did, and with the U-Boot splash still projecting (light engine on) the imager panel overheated after ~15 s. The heartbeat now uses the **focus motor** (no thermal role). Never leave a hung kernel sitting with the light engine on; recover promptly.
+
+Nothing here can brick the device: FEL stays available and the stock / rooted image reflashes. But cut power and recover quickly if the kernel hangs - do not let it sit.
 
 ## The one rule that matters: how PhoenixSuit verification works
 

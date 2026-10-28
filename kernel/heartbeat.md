@@ -1,14 +1,22 @@
 # The gate-#0 GPIO heartbeat
 
-A tiny blink inserted at the very start of the 32-bit `zImage` to answer one question with no serial console: **did the vendor U-Boot actually enter our mainline kernel and start executing it?** (See [bringup-strategy.md](bringup-strategy.md) for why this is gate #0 and why it comes before the CCU.)
+A tiny GPIO tick inserted at the very start of the 32-bit `zImage` to answer one question with no serial console: **did the vendor U-Boot actually enter our mainline kernel and start executing it?** (See [bringup-strategy.md](bringup-strategy.md) for why this is gate #0.)
+
+## Result: gate #0 is PASSED (2026-10-28)
+
+This worked. Flashed to `boot_a` and powered on, the heartbeat ran on the real device, so the vendor U-Boot enters our mainline 32-bit kernel and the CPU executes it. **Branch 1 (32-bit) is validated on hardware.** The heartbeat has done its job; it is kept here for reference and for re-use if the early boot ever needs re-checking.
+
+## !!! Safety: never drive the cooling fan !!!
+
+The first version blinked `fan-power-gpio` (PL7). It proved gate #0 (the fan cut out, so our code had run), but it turned the fan **off** while the vendor U-Boot splash was still being projected (light engine on), and after ~15 s the imager panel overheated (a dark bloom spread from the centre of the image). Never touch the fan, and never leave the device hung with the light engine on and no cooling. The signal is now the **focus motor**, which has no thermal role.
 
 ## What it does
 
 [heartbeat/heartbeat-h726.S](heartbeat/heartbeat-h726.S) is `#include`d into `arch/arm/boot/compressed/head.S`, right where the decompressor begins, **before any clock or CCU init**. The MMU is off there, so it pokes the GPIO registers directly, needing no clock:
 
-- **Blinks the red power LED (PL0) five times.** R_PIO base `0x07022000`, PL bank, `CFG0` at `+0x00` (set PL0 to output), `DAT` at `+0x10` bit 0 (active high).
+- **Ticks the focus motor (phase 0 = PH13) eight times.** Main PIO `0x02000000`, PH bank base `0x020000FC`, `CFG1` at `+0x04` (set PH13 to output), `DAT` at `+0x10` bit 13. An audible click / small lens move each tick.
 
-It uses only `r3`-`r6` and preserves `r0`-`r2` (the U-Boot machine id / DTB pointer), so it does not disturb the boot.
+It uses only `r3`-`r6` and preserves `r0`-`r2` (the U-Boot machine id / DTB pointer), so it does not disturb the boot. The pin numbers are confirmed from the running device's GPIO map (`fan-power-gpio` on PL7, the four `motor-gpio-phaseN` on PH).
 
 ## Build it
 
@@ -17,7 +25,7 @@ HEARTBEAT=1 bash kernel/build.sh
 # -> arch/arm/boot/zImage (with the heartbeat built into the decompressor)
 ```
 
-(Verified to compile into the `zImage`. Whether the LED actually blinks is the test itself.)
+(Verified to compile into the `zImage`.)
 
 ## Flash and observe
 

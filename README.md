@@ -48,8 +48,8 @@ Track B (a from-source kernel) is the primary focus; Track A (a LineageOS GSI) i
 | Phase 0 | Recon: Treble confirmed, device facts, the two-track verdict | Done |
 | B1 | Reverse-engineer the display + keystone drivers into register maps ([re/](re/)) | Done, 9 notes |
 | B2 | Buildable kernel base: board device tree, `defconfig`, build scripts, and real sun50iw15 **CCU + pinctrl** drivers ([kernel/](kernel/)) | Done, compiles into the kernel |
-| Gate #0 | Boot handoff: the stock chain is AArch32, so the kernel is built **32-bit** (`ARCH=arm`) to match it ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | Decided; `zImage` builds |
-| B3 | Confirm gate #0: a GPIO heartbeat (red LED x5) is built into the `zImage` ([kernel/heartbeat.md](kernel/heartbeat.md)); flash via PhoenixSuit and watch | Ready to flash on the device |
+| Gate #0 | Boot handoff: the stock chain is AArch32, so the kernel is built **32-bit** (`ARCH=arm`) to match it; confirmed by a GPIO heartbeat in the `zImage` running on the device ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | **PASSED** - U-Boot enters our 32-bit kernel |
+| B3 | Boot further: hardware-correct the CCU/pinctrl register offsets so the kernel runs past the heartbeat (a UART console is now the key accelerator) | Next |
 | B4 | Driver bring-up loop (display, keystone, Wi-Fi) from the B1 maps | Not started |
 | Track A | LineageOS GSI (deferred fallback) | Not started |
 
@@ -153,8 +153,8 @@ Track B (kernel từ source) là trọng tâm; Track A (LineageOS GSI) là fallb
 | Phase 0 | Recon: xác nhận Treble, thông số máy, chốt hai track | Xong |
 | B1 | Dịch ngược driver display + keystone thành register map ([re/](re/)) | Xong, 9 note |
 | B2 | Nền kernel build-được: device tree, `defconfig`, build script, và driver **CCU + pinctrl** sun50iw15 thật ([kernel/](kernel/)) | Xong, compile vào kernel |
-| Gate #0 | Handoff boot: chuỗi stock là AArch32, nên build kernel **32-bit** (`ARCH=arm`) cho khớp ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | Đã quyết; `zImage` build được |
-| B3 | Xác nhận gate #0: heartbeat GPIO (LED đỏ x5) nhúng vào `zImage` ([kernel/heartbeat.md](kernel/heartbeat.md)); flash PhoenixSuit rồi nhìn | Sẵn sàng flash trên máy |
+| Gate #0 | Handoff boot: chuỗi stock là AArch32, nên build kernel **32-bit** (`ARCH=arm`) cho khớp; đã xác nhận bằng heartbeat GPIO trong `zImage` chạy trên máy ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | **ĐÃ QUA** - U-Boot vào kernel 32-bit của ta |
+| B3 | Boot xa hơn: chỉnh offset register CCU/pinctrl để kernel chạy qua heartbeat (cáp UART giờ là đòn bẩy chính) | Kế tiếp |
 | B4 | Vòng bring-up driver (display, keystone, Wi-Fi) từ map B1 | Chưa bắt đầu |
 | Track A | LineageOS GSI (fallback hoãn) | Chưa bắt đầu |
 
