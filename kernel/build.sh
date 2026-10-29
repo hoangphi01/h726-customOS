@@ -69,11 +69,16 @@ if [ "$TARGET" != "arm64" ] && [ "${HEARTBEAT:-0}" = "1" ]; then
 	# CP1 (1 tick): decompressor entry = gate #0. Free registers here,
 	# use r3-r6, preserve r0-r2 (kernel args). Also strip any legacy
 	# heartbeat-h726.S include from an earlier build in a reused tree.
-	sed -i '/h726-blink.h/d; /H726_BLINK/d; /H726_SPINTEST/d; /H726_BEEP/d; /heartbeat-h726.S/d' "$CH/head.S"
-	# Default CP1 is the fan beacon. For diagnostics, swap H726_BLINK for
-	# H726_SPINTEST (external-reset probe) or H726_BEEP (PA-toggle, proven
-	# silent) - both defined in h726-blink.h.
-	sed -i 's@^\( AR_CLASS(\tmrs\tr9, cpsr\t)\)@#include "h726-blink.h"\n\tH726_SPINTEST r3, r4, r5, r6\n\1@' "$CH/head.S"
+	sed -i '/h726-blink.h/d; /H726_WDOG_OFF/d; /H726_BLINK/d; /H726_SPINTEST/d; /H726_BEEP/d; /heartbeat-h726.S/d' "$CH/head.S"
+	# Earliest kernel code: disarm the vendor watchdog (keyed A523 layout) so a
+	# bare kernel is not reset ~2 s in, THEN the fan beacon. If the watchdog is
+	# tamed, the fan stutters many times (well past the old ~2 s wall); if not,
+	# one stutter then standby as before. (Diagnostic macros H726_SPINTEST /
+	# H726_BEEP are also in h726-blink.h.)
+	# Disarm the main SoC WDT only. (The secure R_WDOG 0x07020400 FAULTS on a
+	# normal-world write - do not inject it here. And the H713 offsets/key may
+	# not match H726; see re/bringup-signals.md.)
+	sed -i 's@^\( AR_CLASS(\tmrs\tr9, cpsr\t)\)@#include "h726-blink.h"\n\tH726_WDOG_OFF 0x1000, 0x0205, r3, r4\n\tH726_BLINK 8, r3, r4, r5, r6\n\1@' "$CH/head.S"
 
 	# CP2 (2 ticks): kernel-proper head.S, right after __create_page_tables
 	# (MMU still off, physical). Only r0/r3/r6/r7 are free there.

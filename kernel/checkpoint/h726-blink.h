@@ -25,6 +25,38 @@
  * independent, MMU on or off). Clobbers only the four registers handed in.
  */
 
+/*
+ * Disarm the main SoC watchdog so a bare kernel is not reset ~2 s after it
+ * starts. The vendor U-Boot arms it and expects the kernel to take it over;
+ * we do not, so it fires. It is the sun55i-A523 "key-protected" layout (our
+ * vendor DTS: `watchdog@2051000`, compatible `allwinner,wdt-v103`), NOT the
+ * old sun6i/H6 layout - every CFG/MODE write is a silent no-op unless bits
+ * [31:16] carry the key 0x16aa. (This is why an earlier `writel(0, 0x02051018)`
+ * - sun6i MODE offset, no key - did nothing.) Confirmed against the H713
+ * sibling well0nez/allwinner-h713-linux (docs/hardware.md, tfa-h713/).
+ *
+ *   base 0x02051000, CTRL +0x0c (feed = 0x14af, no key), MODE +0x14
+ *   (bit 0 = enable; key 0x16aa in [31:16]). Disarm = MODE = 0x16aa0000.
+ *
+ * Must run as the kernel's EARLIEST code (before the ~2 s expires), so it is
+ * injected at the decompressor entry ahead of the fan beacon. The secure
+ * ARISC R_WDOG at 0x07020400 is a separate (and possibly secure-only) matter,
+ * handled only if this is not enough. Clobbers the two registers handed in.
+ */
+	.macro	H726_WDOG_OFF lo, hi, rb, rt
+	movw	\rb, #\lo
+	movt	\rb, #\hi			@ \rb = watchdog base
+	movw	\rt, #0x14af
+	str	\rt, [\rb, #0x0c]		@ CTRL: feed/reload (no key) first
+	movw	\rt, #0x0000
+	movt	\rt, #0x16aa			@ \rt = 0x16aa0000 = key + enable 0
+	str	\rt, [\rb, #0x14]		@ MODE: disable
+	.endm
+	@ Call it for: main SoC WDT  = H726_WDOG_OFF 0x1000, 0x0205, ...
+	@         and R_WDOG (secure) = H726_WDOG_OFF 0x0400, 0x0702, ...
+	@ (0x02051000 and 0x07020400). The R_WDOG is ARISC/secure-owned and a
+	@ normal-world write may fault - if so the kernel dies even earlier.
+
 	.macro	H726_BLINK count, rb, rt, rc, rd
 	movw	\rb, #0x2000
 	movt	\rb, #0x0702			@ \rb = 0x07022000, R_PIO / PL bank

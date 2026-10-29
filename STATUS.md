@@ -175,12 +175,17 @@ The H713 sibling already flashed a prebuilt PHH Treble ARM32 GSI and documented 
   sun6i/H6): MODE at `+0x14`, CTRL at `+0x0c` (feed `0x14af`), and every CFG/MODE write is a silent no-op
   without the key `0x16aa` in bits [31:16]; there are **three** watchdogs (`0x02051000`, `0x02051400`, and a
   secure ARISC `R_WDOG` at `0x07020400` that survives resets). Our one disable attempt failed for a precise
-  reason - we wrote `0` to the *sun6i* MODE offset `0x02051018` with no key, a no-op. **Next session's #1 task:
-  disarm all three with the keyed sequence** (feed `CTRL=0x14af`, then `MODE=0x16aa0000`, read back) as the
-  kernel's earliest action, then the fan beacon should run past 2 s. A speaker-beep via the PA-enable GPIO was
-  tried and is **silent**. Full detail + the sibling-project references in
-  [re/bringup-signals.md](re/bringup-signals.md). UART (pads PH0/PH1, or no-solder on the SD-slot PF2/PF4)
-  remains the real accelerator.
+  reason - we wrote `0` to the *sun6i* MODE offset `0x02051018` with no key, a no-op. **Disarm attempted
+  on hardware (2026-10-29), INCONCLUSIVE:** a correct keyed-A523 disarm (verified by disassembly) of the
+  main WDT `0x02051000` had **no effect** (still ~2 s reset), while adding the secure R_WDOG `0x07020400`
+  made the kernel **fault earlier** (that address is secure/ARISC-owned or wrong for H726). **Two caveats:**
+  the `+0x14`/`0x16aa`/base values are what well0nez measured on the **H713**, and our watchdog compatible
+  is `allwinner,wdt-v103` (not the H713's `allwinner,sun50i-wdt`), so the **H726 map may differ** - "no
+  effect" could mean the main WDT is not the source OR our disarm is a no-op on H726. Blind debugging has
+  hit its limit: main WDT disarmable but (as tested) not the source; secure R_WDOG unwritable from the
+  kernel. **Next move: a UART** (pads PH0/PH1, or no-solder SD-slot PF2/PF4) to read the 2 s-before-reset
+  log and the true register map, or an open BL31 (well0nez approach). A speaker-beep via the PA-enable GPIO
+  was tried and is **silent**. Full detail in [re/bringup-signals.md](re/bringup-signals.md).
 - [ ] Phase B4: driver bring-up loop by dependency order (see [re/README.md](re/README.md)), reusing the Mali / CedarX / AIC8800 blobs.
 
 **Track A (deferred fallback), build the clean userspace:**

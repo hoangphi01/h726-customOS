@@ -126,6 +126,38 @@ a normal-world disable if OP-TEE/ARISC owns it, in which case we feed it periodi
 open BL31 (as well0nez did). Full plan and sources: see the project's next-session plan and
 `well0nez/allwinner-h713-linux`.
 
+### On-device disarm attempts (2026-10-29): inconclusive, two hard results
+
+A keyed-A523 disarm (`H726_WDOG_OFF`, verified by disassembly to emit exactly
+`movw/movt r3=0x02051000`, `str 0x14af,[r3,#0x0c]`, `str 0x16aa0000,[r3,#0x14]`) was injected at the
+very start of the decompressor, ahead of the fan beacon. Two tests, via the A/B loop:
+
+1. **Disarm the main WDT `0x02051000` only -> no change** (still one fan stutter then standby at ~2 s).
+   The code is correct and *runs* (the fan beacon right after it still fires), and `0x02051000` is a
+   normal-world register (our DTS binds it, U-Boot drives it), so the write takes effect.
+2. **Also disarm the R_WDOG `0x07020400` -> the kernel dies EARLIER** (no fan stutter at all, immediate
+   standby "like a shutdown"). So the write to `0x07020400` **faults** from the normal world - it is
+   secure/ARISC-owned (or that address is wrong/unmapped on H726). We cannot touch it from a bare kernel.
+
+**Two honest caveats (why this is not a closed case):**
+
+- **The H713 register map may not be the H726 map.** The `+0x14` MODE offset, the `0x16aa` key, and the
+  `0x02051000`/`0x07020400` bases are all what **well0nez measured on the H713** - a sibling, not this
+  SoC. Our vendor watchdog node is `allwinner,wdt-v103`, a different compatible string from the H713
+  vendor's `allwinner,sun50i-wdt`, so the H726 layout could differ. "Disarming the main WDT had no
+  effect" therefore has two readings: the main WDT is not the ~2 s source, **or** our H713-derived
+  disarm is a no-op on H726. We cannot yet tell which.
+- **The ~2 s is almost certainly still a watchdog, not the MCU.** Stock Android takes ~30 s to boot and
+  the device stays on the whole time, so the MCU gives the SoC far more than 2 s; the ~2 s reset is
+  specific to our bare kernel not servicing what the vendor chain services.
+
+**So blind debugging has hit its practical limit here:** the main WDT is disarmable but (as tested) not
+the source, and the secure R_WDOG cannot be written from the normal world. The decisive next move is a
+**UART** (pads now known: PH0/PH1, or the no-solder SD-slot PF2/PF4) to read the ~2 s-before-reset log
+and see the exact cause and the true register layout - or to confirm/correct the H726 watchdog map from
+the vendor kernel's own watchdog driver. Longer term, an open BL31 that disarms the secure R_WDOG (the
+well0nez approach) is the clean fix.
+
 **Signal shape that works in a short window:** turn the fan fully OFF for ~1 s then ON for ~2 s,
 repeated. The fan audibly stopping is unmistakable even over itself, and starting with OFF puts the
 first clear event inside the window. (Quick sub-second "stutters" are too easy to miss, and a long
