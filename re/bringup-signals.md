@@ -214,6 +214,46 @@ kernel's earliest action.
   (Signal 2 above) - it is not just a fragile driver, it is a cross-domain bus hang. Be careful with
   any address in the `0x070x_xxxx` (R/ARISC) and display blocks.
 
+### UART attached, console confirmed live, pad hunt (2026-11-02)
+
+A 3.3V USB-UART (PL2303 clone, via usbipd->WSL; TXD<->RXD loopback proven good) is now on the board.
+Two things are settled, and one is still open:
+
+- **The vendor console IS enabled (ground truth, not a guess).** The stock `bootargs` (from the
+  extracted `stock.dts`) carry **`earlyprintk=sunxi-uart,0x02600000`** and **`console=ttyAS0,115200`**.
+  So UART0 at **`0x02600000`** (PH0 TX / PH1 RX) is the live console at **115200 8N1**, and the vendor
+  chain leaves UART0 clocked. This retired the "maybe the console is silent" worry and justified
+  turning on `earlycon=uart8250,mmio32,0x02600000` for our own kernel (see `kernel/build.sh`; the fan
+  beacons were removed at the same time - earlycon is the better signal and the fan is the overheat
+  hazard).
+- **Pad hunt is unresolved - the true PH0 pad is not yet confirmed.** Candidates probed, none yet
+  giving a clean readable boot log:
+  - **Two gold vias next to the SoC** - the only spot that emitted multiple bytes, but garbage
+    (`f0 c0 e0 7f fe ...`, single-edge bytes). Either PH0 with chattering contact, or floating
+    test-points picking up noise.
+  - **A 3-pad cluster by the power/LED connector**, measuring **0 / 2.64 / 3.2 V** - a UART-like
+    trio by voltage, but **0 bytes**. Its location (power/LED side) does **not** match the H713
+    reference, where the console pads sit at the **bottom-left under the lower USB-A** (see the
+    annotated `YuujiLab/HY300-H713-Research/Hardware/marked_uart_pads.jpg`, order GND-RX-TX). Likely a
+    different/quiet UART (MCU?), not UART0.
+  - **A labelled `UP1` 3-pad** - **GND + two ~3.3 V lines** (the textbook idle-UART signature: TX and
+    RX both idle high). One of the two 3.3 V pads emitted a **single 0xFF** at power-on; the other
+    gave nothing. Best-looking candidate, but no sustained read yet.
+- **Caveat that cost time: a multimeter average voltage is misleading for a UART TX.** UART data is
+  short pulses, so a live, transmitting TX still reads near its idle 3.3V on a slow meter; the 2.64 V
+  we read on one pad was a weak hint, not proof of "the active TX". Trust a **readable ASCII flood**
+  (e.g. `U-Boot`, `Booting Linux`, `earlycon`) as the only real confirmation of PH0.
+- **The actual blocker is mechanical contact.** Hand-holding a bare wire on these sub-millimetre pads
+  chatters; even a confirmed continuity beep does not survive the board movement of a power-cycle. A
+  0-byte read on a pad that beeps = the RX input is floating (open) during the capture, not a level or
+  baud problem (the adapter reads 3.3V fine; the clone RX threshold is below the 3.3V the board drives).
+  Without a soldering iron the fix is a rigid pressed tip and power-cycling **without touching the
+  board** (wall switch / far end of the power lead). This remains the gating issue.
+- **Plan:** our own `earlycon` kernel floods UART0 **continuously** (unlike the stock boot's sparse,
+  low-`loglevel` burst), so it is the better way to both find PH0 and read the bring-up log; flash it
+  to `boot_b` via the A/B one-shot and probe UP1 while it runs. (First attempt 2026-11-02 missed its
+  window to a Git-bash path bug; see LESSONS.md 2.)
+
 ### Speaker beep (PA-enable toggle): does NOT work
 
 The codec's power-amp enable is `pa-pin-0 = <&r_pio PL2 ...>` (active high; PL2 on the R_PIO at

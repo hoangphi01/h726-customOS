@@ -20,7 +20,10 @@ path; a packer got `SOURCE=''`).
 Git-bash (MSYS) rewrites arguments that look like Unix paths before they reach the subprocess:
 `wsl.exe -- bash /mnt/c/.../build.sh` became `bash C:/Program Files/Git/mnt/c/.../build.sh`
 (→ "No such file or directory", exit 127). The identical bug hit `adb push /data/local/tmp/...`
-(→ `C:/Program Files/Git/data/...`, 0 bytes written).
+(→ `C:/Program Files/Git/data/...`, 0 bytes written), and again on `wsl.exe -- python3 /root/cap_live.py`
+(→ `C:/Program Files/Git/root/cap_live.py`), which silently **skipped a live UART capture and so
+missed its one-shot `boot_b` flash window** - the expensive kind of miss, since re-arming the A/B
+one-shot and rebooting is a whole cycle.
 
 - **Fix:** prefix the command with `MSYS_NO_PATHCONV=1`, or run adb/`dd` from **PowerShell**
   (no rewriting). For WSL, combine with lesson 1 (literal paths, or a wrapper script).
@@ -85,6 +88,28 @@ Not repeated here, but part of the same hard-won set:
   only a **minimal-diff** boot-only edit is accepted (never touch `dlinfo`).
 - A **full** PhoenixSuit recovery flash **wipes `/data`** (AVB/encryption mismatch force-formats it);
   a **boot-only** minimal-diff or `dd` flash leaves `/data` intact.
+
+## 9. Reading a 3.3V UART with a cheap clone adapter over usbipd -> WSL
+
+Getting the serial link itself working took more care than expected (the adapter is a ~35 CZK PL2303
+clone whose Windows Prolific driver fails with code 28; it works only via the Linux `pl2303` driver,
+so the device is bound with `usbipd` and attached into WSL). Hard-won points:
+
+- **Do not touch DTR/RTS on an "STC-ISP" style clone.** Asserting them (`setDTR(True)`/`setRTS(True)`
+  in pyserial) drives the module's on-board auto-download transistors and **resets/disconnects the
+  USB device** mid-capture (a storm of "device reports readiness to read but returned no data"). A
+  loopback that worked with DTR/RTS set misled us into adding them; for plain reading, leave them
+  alone.
+- **The usbip link drops** when the port is **reopened rapidly** (a baud-sweep that closes/reopens
+  per baud) or when the **WSL VM idles out**. Fixes that stuck: open the port **once** and change
+  `ser.baudrate` in place to sweep; hold the VM up with a background `wsl.exe -- sleep` keepalive;
+  and on a drop, re-attach with `usbipd detach --busid <id>` then `usbipd attach --wsl --busid <id>`.
+- **`pkill -f "cat /dev/ttyUSB0"` kills itself** (its own command line matches the pattern) - use
+  `pkill -x cat` or a PID.
+- **Verify the adapter before trusting a null read:** a TXD<->RXD loopback that echoes a test string
+  proves the adapter + the pyserial path are good, so a later 0-byte read is a wiring/pad/level
+  issue, not the software. (Pad-finding and the multimeter caveats live in
+  [re/bringup-signals.md](re/bringup-signals.md).)
 - **Never drive the cooling fan** in a bring-up test (the panel overheats in ~15 s); use the focus
   motor. The kernel proper is safe because the bring-up DT keeps `pwm-fan` disabled.
 - Hardware FEL entry is the recessed **FLASH button next to HDMI** (paperclip + power), not Vol+ IR;

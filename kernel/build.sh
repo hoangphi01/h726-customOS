@@ -59,7 +59,7 @@ grep -q 'sun50i-h726-hy300ultra.dtb' "$DTSDIR/Makefile" || \
 	echo 'dtb-$(CONFIG_ARCH_SUNXI) += sun50i-h726-hy300ultra.dtb' >> "$DTSDIR/Makefile"
 
 if [ "$TARGET" != "arm64" ] && [ "${HEARTBEAT:-0}" = "1" ]; then
-	echo ">> B3 checkpoint beacons (no-UART bring-up)"
+	echo ">> B3 earlycon bring-up (UART console on PH0; no fan beacon)"
 	# Shared blink macro, copied next to each .S that includes it.
 	CH=arch/arm/boot/compressed
 	KH=arch/arm/kernel
@@ -71,24 +71,23 @@ if [ "$TARGET" != "arm64" ] && [ "${HEARTBEAT:-0}" = "1" ]; then
 	# heartbeat-h726.S include from an earlier build in a reused tree.
 	sed -i '/h726-blink.h/d; /H726_WDOG_OFF/d; /H726_BLINK/d; /H726_SPINTEST/d; /H726_BEEP/d; /heartbeat-h726.S/d' "$CH/head.S"
 	# Earliest kernel code: disarm the vendor watchdog (keyed A523 layout) so a
-	# bare kernel is not reset ~2 s in, THEN the fan beacon. If the watchdog is
-	# tamed, the fan stutters many times (well past the old ~2 s wall); if not,
-	# one stutter then standby as before. (Diagnostic macros H726_SPINTEST /
-	# H726_BEEP are also in h726-blink.h.)
+	# bare kernel is not reset ~2 s in. (Diagnostic macros H726_SPINTEST /
+	# H726_BEEP remain in h726-blink.h if a GPIO probe is ever needed, but we
+	# do NOT drive the fan - earlycon is the signal.)
 	# Disarm the main SoC WDT only. (The secure R_WDOG 0x07020400 FAULTS on a
 	# normal-world write - do not inject it here. And the H713 offsets/key may
 	# not match H726; see re/bringup-signals.md.)
-	sed -i 's@^\( AR_CLASS(\tmrs\tr9, cpsr\t)\)@#include "h726-blink.h"\n\tH726_WDOG_OFF 0x1000, 0x0205, r3, r4\n\tH726_BLINK 8, r3, r4, r5, r6\n\1@' "$CH/head.S"
+	sed -i 's@^\( AR_CLASS(\tmrs\tr9, cpsr\t)\)@#include "h726-blink.h"\n\tH726_WDOG_OFF 0x1000, 0x0205, r3, r4\n\1@' "$CH/head.S"
 
 	# CP2 (2 ticks): kernel-proper head.S, right after __create_page_tables
 	# (MMU still off, physical). Only r0/r3/r6/r7 are free there.
 	sed -i '/h726-blink.h/d; /H726_BLINK/d' "$KH/head.S"
-	sed -i 's@^\(\tbl\t__create_page_tables\)@\1\n#include "h726-blink.h"\n\tH726_BLINK 2, r3, r0, r6, r7@' "$KH/head.S"
+	# CP2 fan beacon removed: earlycon is the signal; no fan driving (safety).
 
-	# CP3 (3 ticks, early_initcall) + steady heartbeat (late_initcall), in C.
-	cp "$HERE/checkpoint/h726-checkpoint.c" "$KH/"
-	grep -q 'h726-checkpoint.o' "$KH/Makefile" || \
-		echo 'obj-y += h726-checkpoint.o' >> "$KH/Makefile"
+	# CP3 C fan beacons removed (earlycon replaces them; no fan driving).
+	# Scrub any leftover from a reused tree.
+	rm -f "$KH/h726-checkpoint.c"
+	sed -i '/h726-checkpoint.o/d' "$KH/Makefile" 2>/dev/null || true
 
 	# Minimal bring-up device tree (appended to the zImage below).
 	cp "$HERE/sun50i-h726-hy300ultra-bringup.dts" "$DTSDIR/"
@@ -107,13 +106,23 @@ else
 		--enable CONFIG_PSTORE --enable CONFIG_PSTORE_RAM
 	if [ "${HEARTBEAT:-0}" = "1" ]; then
 		# Our appended DTB must override the vendor U-Boot's DTB, and the
-		# cmdline must be deterministic (no console we can read anyway).
-		# nr_cpus=1 skips SMP secondary bring-up via PSCI/SMC. No earlycon:
-		# an 8250 earlycon on an unclocked UART can busy-wait on THRE.
+		# cmdline must be deterministic. nr_cpus=1 skips SMP secondary
+		# bring-up via PSCI/SMC. earlycon writes straight to UART0
+		# (0x02600000, PH0): the vendor chain leaves UART0 clocked - stock
+		# bootargs use earlyprintk=sunxi-uart,0x02600000 console=ttyAS0,115200
+		# - so the old "unclocked UART busy-waits on THRE" worry no longer
+		# applies, and earlycon is now our primary bring-up log (it does not
+		# need a DT node; it writes to the fixed address). See
+		# re/bringup-signals.md.
 		./scripts/config --enable CONFIG_ARM_APPENDED_DTB \
 			--enable CONFIG_ARM_ATAG_DTB_COMPAT \
 			--enable CONFIG_CMDLINE_FORCE
-		./scripts/config --set-str CONFIG_CMDLINE "nr_cpus=1 loglevel=7"
+		./scripts/config --enable CONFIG_SERIAL_8250 \
+			--enable CONFIG_SERIAL_8250_CONSOLE \
+			--enable CONFIG_SERIAL_8250_DW \
+			--enable CONFIG_SERIAL_EARLYCON \
+			--enable CONFIG_SERIAL_OF_PLATFORM
+		./scripts/config --set-str CONFIG_CMDLINE "earlycon=uart8250,mmio32,0x02600000 nr_cpus=1 loglevel=8"
 	fi
 fi
 make olddefconfig
