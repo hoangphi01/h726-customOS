@@ -56,7 +56,7 @@ What is validated is that the kernel *builds* in the right format. Whether the v
 
 ## What unlocks everything: a UART console
 
-**ACHIEVED 2026-11-06:** the UART console reads. The **UP1** pad is UART0 **PH0, 115200 8N1**, read with a **CP2102** (full stock boot log captured, printable 1.00). See [re/bringup-signals.md](../re/bringup-signals.md) "UART SOLVED". The blind-debug GPIO beacons below are now superseded by `earlycon`; keep them only as history. Next: flash the earlycon kernel and read where it hangs.
+**ACHIEVED 2026-11-06:** the UART console reads. The **3-pad cluster by the `LED` silkscreen / power connector** (TX = the middle pad) is UART0 **PH0, 115200 8N1**, read with a **CP2102** (full stock boot log captured, printable 1.00). Full pinout + board photo: [re/uart.md](../re/uart.md). The blind-debug GPIO beacons below are now superseded by `earlycon`; keep them only as history. Next: flash the earlycon kernel and read where it hangs.
 
 A 3.3V USB-UART adapter (about 2-5 USD) on the board's debug pads gives log output from the kernel's assembly head (`earlycon` / `DEBUG_LL`). That shows gate #0 directly, which neither FEL RAM-read nor USB-gadget can. It is worth more than the entire blind-debug toolbox combined, and it turns the 32-vs-64 question from guesswork into a one-boot answer. The H713 pad reference is [YuujiLab's UART_FEL notes](https://github.com/YuujiLab/HY300-H713-Research/blob/main/Hardware/UART_FEL.md).
 

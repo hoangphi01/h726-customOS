@@ -24,7 +24,8 @@ All the vendor display drivers are loadable modules, not built into `vmlinux`; t
 
 | Note | Role |
 |---|---|
+| [uart.md](uart.md) | **the UART debug console (SOLVED 2026-11-06)**: pad location + photo ([h726-uart-pads.png](h726-uart-pads.png)), pinout (UART0 PH0, `0x02600000`, 115200 8N1), wiring, how to read it (CP2102 via usbipd->WSL / PuTTY), and the captured stock boot log ([h726-stock-uart-boot.txt](h726-stock-uart-boot.txt)). This is the primary bring-up instrument now. |
 | [ccu-sun50iw15.md](ccu-sun50iw15.md) | the clock tree read live off the device (the CCU driver's source of truth) |
-| [bringup-signals.md](bringup-signals.md) | what output channels exist for **blind (no-UART) bring-up** and which are usable as a boot beacon: the focus motor (dead - manual focus), `/sys/class/prj` (reboots the device on read), the backlight PWM (candidate), the fan (proven but thermal). Includes the vendor stepper-motor interface (`motor_ctr`: phase pins + half-step tables). |
+| [bringup-signals.md](bringup-signals.md) | the blind (no-UART) bring-up signal hunt and its conclusion - **now superseded by the UART** (see uart.md), kept as history + the watchdog diagnosis. Which output channels exist as a boot beacon: the focus motor (dead - manual focus), `/sys/class/prj` (reboots on read), backlight PWM, the fan (proven but thermal). Includes the vendor stepper-motor interface (`motor_ctr`). |
 
 See [../STATUS.md](../STATUS.md) for the project state and [../PLAN.md](../PLAN.md) for the roadmap.

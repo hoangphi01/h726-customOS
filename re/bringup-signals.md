@@ -254,16 +254,21 @@ Two things are settled, and one is still open:
   to `boot_b` via the A/B one-shot and probe UP1 while it runs. (First attempt 2026-11-02 missed its
   window to a Git-bash path bug; see LESSONS.md 2.)
 
-### ✅ UART SOLVED (2026-11-06): UP1 is the console, full log read
+### ✅ UART SOLVED (2026-11-06): the LED-connector 3-pad is the console, full log read
 
 The PL2303 clone died mid-probe (a short killed its serial side; USB still flaky-enumerated). A new
 **CP2102** (genuine Silicon Labs, bound with `usbipd bind --force` as admin, attached into WSL) read
 the console on the **first clean try**. Confirmed facts, now ground truth:
 
-- **UP1 = the console = UART0 PH0, 115200 8N1.** A `cap_live.py 115200` capture on the UP1 TX pad
-  during a power-cycle returned **8963 bytes at printable ratio 1.00** - clean ASCII from
-  `HELLO! BOOT0 is starting!` to the `console:/ $` Android shell. The bootargs were right all along
-  (`console=ttyAS0,115200`); earlier failures were pad-contact and a dead adapter, not baud/polarity.
+- **The console is the 3-pad cluster by the `LED` silkscreen / power-LED wire connector** (top-right of
+  the board, **not** the `UP1` cluster - UP1 was a nearby decoy that tested dead). Order top-to-bottom
+  **RX / TX / GND**; **TX is the middle pad that measured ~2.64 V** (the 2.64 V reading was the active
+  TX all along - the "multimeter is misleading" caveat made us wrongly abandon it for UP1 on 2026-11-02).
+  It is **UART0 PH0, 115200 8N1**. A `cap_live.py 115200` capture on that TX pad during a power-cycle
+  returned **8963 bytes at printable ratio 1.00** - clean ASCII from `HELLO! BOOT0 is starting!` to the
+  `console:/ $` Android shell. The bootargs were right all along (`console=ttyAS0,115200`); earlier
+  failures were pad-contact and a dead adapter, not baud/polarity. (GND confirmed; **RX not yet probed**.)
+  Annotated board photo: workspace `H726 TXRX.png`.
 - **The "flooding garbage at every baud" pad was USB data (D+/D-), NOT the console** - correctly ruled
   out. A real console is readable at its baud; that pad never was, at any baud.
 - **What the stock log gives us (a map for our own bring-up):** boot0 @115200 -> DRAM init
@@ -275,9 +280,10 @@ the console on the **first clean try**. Confirmed facts, now ground truth:
   [410fd034]`. The ATF/OP-TEE bases match our DTS `/memreserve/`; `Android's image name: arm` confirms
   the 32-bit boot path; the SCP/arisc bring-up precedes Linux.
 - **Reading our own kernel now:** flash the earlycon `boot_hb.img` to `boot_b` (A/B one-shot), probe
-  UP1, and the earlycon output shows exactly how far our mainline kernel gets before it hangs/resets -
-  the real tool for the CCU/pinctrl offset-correction loop. The stock log above is the reference for
-  what a healthy boot prints up to `Starting kernel`.
+  the console TX pad, and the earlycon output shows exactly how far our mainline kernel gets before it
+  hangs/resets - the real tool for the CCU/pinctrl offset-correction loop. The stock log above is the
+  reference for what a healthy boot prints up to `Starting kernel`. Full pinout + photo:
+  [uart.md](uart.md).
 - **Adapter workflow:** `usbipd bind --force --busid <id>` once in an **admin** PowerShell (attach is
   non-admin after). The usbip link drops on WSL idle - hold a `wsl -u root -- sleep` keepalive and
   `usbipd attach --wsl --busid <id>` to recover. Confirm the adapter with a TXD<->RXD loopback before
