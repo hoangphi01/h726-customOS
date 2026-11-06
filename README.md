@@ -49,7 +49,7 @@ Track B (a from-source kernel) is the primary focus; Track A (a LineageOS GSI) i
 | B1 | Reverse-engineer the display + keystone drivers into register maps ([re/](re/)) | Done, 9 notes |
 | B2 | Buildable kernel base: board device tree, `defconfig`, build scripts, and real sun50iw15 **CCU + pinctrl** drivers ([kernel/](kernel/)) | Done, compiles into the kernel |
 | Gate #0 | Boot handoff: the stock chain is AArch32, so the kernel is built **32-bit** (`ARCH=arm`) to match it; confirmed by a GPIO heartbeat in the `zImage` running on the device ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | **PASSED** - U-Boot enters our 32-bit kernel |
-| B3 | Boot past the vendor **watchdog** (an external ~2 s reset, now diagnosed as the sun55i-A523 key-protected watchdog), then walk the kernel to init with GPIO fan beacons and fix the CCU/pinctrl offsets ([re/bringup-signals.md](re/bringup-signals.md)) | Gate #0 passed; ~2 s watchdog diagnosed; next = disarm it with the `0x16aa` key |
+| B3 | Walk the kernel to init over the **UART console** (`earlycon`) and fix the CCU/pinctrl offsets; get past the vendor **watchdog** (an external ~2 s reset, diagnosed as the sun55i-A523 key-protected watchdog) ([re/bringup-signals.md](re/bringup-signals.md)) | Gate #0 passed; **✅ UART console reads** (UP1 pad = PH0 115200, CP2102, full stock boot log captured); next = flash the earlycon kernel and read where it hangs/resets |
 | B4 | Driver bring-up loop (display, keystone, Wi-Fi) from the B1 maps | Not started |
 | Track A | LineageOS GSI (deferred fallback) | Not started |
 
@@ -104,7 +104,7 @@ Everything compiles and builds; nothing boots yet (see below).
 
 - **Gate #0, the boot handoff.** The stock kernel is AArch32 and entering AArch64 on this SoC is unsolved, so we build 32-bit. **Passed on hardware (2026-10-28):** U-Boot enters our 32-bit kernel.
 - **CCU / pinctrl register offsets.** Modelled on the A523 generation and the live clock tree; the offsets are a hypothesis until a boot confirms them. The B3 bring-up de-risks this (the beacon does not depend on the CCU, which is registered without `CLK_IS_CRITICAL`).
-- **No UART yet.** Bring-up is blind: a ladder of GPIO **checkpoint beacons** (and pstore for later stages) stands in for serial. `sunxi-fel` does not support `0x1911`, so the loader is PhoenixSuit over FEL. A 3.3V USB-UART adapter is the single biggest accelerator.
+- **UART console now reads (2026-11-06).** The **UP1** pad is UART0 **PH0, 115200**, read with a **CP2102**; the full stock boot log was captured and our kernel will use `earlycon` (the GPIO checkpoint beacons are retired). `sunxi-fel` still does not support `0x1911`, so the loader stays PhoenixSuit over FEL.
 - **The display stack.** `vs-display`, `tvtop`, the keystone and the panel are the real remaining driver work; they are reverse-engineered in [re/](re/) but not yet written as mainline drivers.
 
 ## 9. Documentation
@@ -174,7 +174,7 @@ Track B (kernel từ source) là trọng tâm; Track A (LineageOS GSI) là fallb
 | B1 | Dịch ngược driver display + keystone thành register map ([re/](re/)) | Xong, 9 note |
 | B2 | Nền kernel build-được: device tree, `defconfig`, build script, và driver **CCU + pinctrl** sun50iw15 thật ([kernel/](kernel/)) | Xong, compile vào kernel |
 | Gate #0 | Handoff boot: chuỗi stock là AArch32, nên build kernel **32-bit** (`ARCH=arm`) cho khớp; đã xác nhận bằng heartbeat GPIO trong `zImage` chạy trên máy ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | **ĐÃ QUA** - U-Boot vào kernel 32-bit của ta |
-| B3 | Vượt **watchdog** vendor (cú reset ngoài ~2s, nay đã chẩn đoán = watchdog layout A523 có key), rồi đưa kernel tới init bằng beacon quạt + chỉnh offset CCU/pinctrl ([re/bringup-signals.md](re/bringup-signals.md)) | Gate #0 qua; watchdog ~2s đã chẩn đoán; kế = tắt nó bằng key `0x16aa` |
+| B3 | Đưa kernel tới init qua **UART console** (`earlycon`) + chỉnh offset CCU/pinctrl; vượt **watchdog** vendor (cú reset ngoài ~2s, chẩn đoán = watchdog layout A523 có key) ([re/bringup-signals.md](re/bringup-signals.md)) | Gate #0 qua; **✅ UART đọc được** (pad UP1 = PH0 115200, CP2102, đã bắt full log boot stock); kế = flash kernel earlycon đọc xem nó hang/reset ở đâu |
 | B4 | Vòng bring-up driver (display, keystone, Wi-Fi) từ map B1 | Chưa bắt đầu |
 | Track A | LineageOS GSI (fallback hoãn) | Chưa bắt đầu |
 
@@ -229,7 +229,7 @@ Tất cả compile + build được; chưa boot (xem dưới).
 
 - **Gate #0, handoff boot.** Kernel gốc AArch32, vào AArch64 trên SoC này chưa giải, nên build 32-bit. **Đã qua trên phần cứng (2026-10-28):** U-Boot vào kernel 32-bit của ta.
 - **Offset register CCU / pinctrl.** Dựa thế hệ A523 + cây clock đọc trực tiếp; offset là giả thuyết tới khi boot xác nhận. Bring-up B3 giảm rủi ro chỗ này (beacon không phụ thuộc CCU, và CCU đăng ký không `CLK_IS_CRITICAL`).
-- **Chưa có UART.** Bring-up mù: thang **checkpoint beacon** GPIO (+ pstore cho giai đoạn sau) thay serial. `sunxi-fel` không hỗ trợ `0x1911` nên loader là PhoenixSuit over FEL. Cáp USB-UART 3.3V là đòn bẩy lớn nhất.
+- **UART console giờ đọc được (2026-11-06).** Pad **UP1** là UART0 **PH0, 115200**, đọc bằng **CP2102**; đã bắt full log boot stock, kernel mình sẽ dùng `earlycon` (bỏ các checkpoint beacon GPIO). `sunxi-fel` vẫn không hỗ trợ `0x1911` nên loader vẫn là PhoenixSuit over FEL.
 - **Stack display.** `vs-display`, `tvtop`, keystone và panel là việc driver lớn còn lại; đã dịch ngược ở [re/](re/) nhưng chưa viết thành driver mainline.
 
 ## 9. Tài liệu
