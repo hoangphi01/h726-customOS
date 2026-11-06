@@ -49,7 +49,7 @@ Track B (a from-source kernel) is the primary focus; Track A (a LineageOS GSI) i
 | B1 | Reverse-engineer the display + keystone drivers into register maps ([re/](re/)) | Done, 9 notes |
 | B2 | Buildable kernel base: board device tree, `defconfig`, build scripts, and real sun50iw15 **CCU + pinctrl** drivers ([kernel/](kernel/)) | Done, compiles into the kernel |
 | Gate #0 | Boot handoff: the stock chain is AArch32, so the kernel is built **32-bit** (`ARCH=arm`) to match it; confirmed by a GPIO heartbeat in the `zImage` running on the device ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | **PASSED** - U-Boot enters our 32-bit kernel |
-| B3 | Walk the kernel to init over the **UART console** (`earlycon`) and fix the CCU/pinctrl offsets; get past the vendor **watchdog** (an external ~2 s reset, diagnosed as the sun55i-A523 key-protected watchdog) ([re/bringup-signals.md](re/bringup-signals.md)) | Gate #0 passed; **✅ UART console reads** (LED-connector 3-pad = PH0 115200, CP2102, full stock boot log captured; see [re/uart.md](re/uart.md)); next = flash the earlycon kernel and read where it hangs/resets |
+| B3 | Walk the kernel to init over the **UART console** (`earlycon`) and fix the CCU/pinctrl offsets; get past the vendor **watchdog** (an external ~2 s reset, diagnosed as the sun55i-A523 key-protected watchdog) ([re/bringup-signals.md](re/bringup-signals.md)) | Gate #0 passed; **✅ UART console reads** (LED-connector 3-pad = PH0 115200, CP2102; see [re/uart.md](re/uart.md)); **✅ our mainline 6.16.7 boots** - earlycon confirms UART base `0x02600000`, reaches **PSCI v1.1 + arch_timer 24 MHz**, then goes dark at the earlycon->console handover (fixed with `keep_bootcon`); next = read past it to the CCU/driver probes |
 | B4 | Driver bring-up loop (display, keystone, Wi-Fi) from the B1 maps | Not started |
 | Track A | LineageOS GSI (deferred fallback) | Not started |
 
@@ -103,8 +103,8 @@ Everything compiles and builds; nothing boots yet (see below).
 ## 8. Known challenges
 
 - **Gate #0, the boot handoff.** The stock kernel is AArch32 and entering AArch64 on this SoC is unsolved, so we build 32-bit. **Passed on hardware (2026-10-28):** U-Boot enters our 32-bit kernel.
-- **CCU / pinctrl register offsets.** Modelled on the A523 generation and the live clock tree; the offsets are a hypothesis until a boot confirms them. The B3 bring-up de-risks this (the beacon does not depend on the CCU, which is registered without `CLK_IS_CRITICAL`).
-- **UART console now reads (2026-11-06).** The **3-pad cluster by the `LED` silkscreen / power connector** (TX = the middle pad) is UART0 **PH0, 115200**, read with a **CP2102**; the full stock boot log was captured and our kernel will use `earlycon` (the GPIO checkpoint beacons are retired). Pinout + photo: [re/uart.md](re/uart.md). `sunxi-fel` still does not support `0x1911`, so the loader stays PhoenixSuit over FEL.
+- **CCU / pinctrl register offsets.** Modelled on the A523 generation and the live clock tree; the offsets are a hypothesis until a boot confirms them. Partly confirmed on 2026-11-06: our kernel's earlycon reaches PSCI + the arch_timer, so the early clock path is good enough to get that far; the per-driver CCU offsets are still verified as each driver probes.
+- **UART console now reads (2026-11-06).** The **3-pad cluster by the `LED` silkscreen / power connector** (TX = the middle pad) is UART0 **PH0, 115200**, read with a **CP2102**; the full stock boot log was captured, and our own mainline **6.16.7** kernel was then flashed to `boot_a` and read live - its `earlycon` confirms the base `0x02600000` and it boots to the console handover (see [re/uart.md](re/uart.md) and [re/h726-kernel-earlycon-boot.txt](re/h726-kernel-earlycon-boot.txt)). The GPIO checkpoint beacons are retired. `sunxi-fel` still does not support `0x1911`, so the loader stays PhoenixSuit over FEL.
 - **The display stack.** `vs-display`, `tvtop`, the keystone and the panel are the real remaining driver work; they are reverse-engineered in [re/](re/) but not yet written as mainline drivers.
 
 ## 9. Documentation
@@ -174,7 +174,7 @@ Track B (kernel từ source) là trọng tâm; Track A (LineageOS GSI) là fallb
 | B1 | Dịch ngược driver display + keystone thành register map ([re/](re/)) | Xong, 9 note |
 | B2 | Nền kernel build-được: device tree, `defconfig`, build script, và driver **CCU + pinctrl** sun50iw15 thật ([kernel/](kernel/)) | Xong, compile vào kernel |
 | Gate #0 | Handoff boot: chuỗi stock là AArch32, nên build kernel **32-bit** (`ARCH=arm`) cho khớp; đã xác nhận bằng heartbeat GPIO trong `zImage` chạy trên máy ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | **ĐÃ QUA** - U-Boot vào kernel 32-bit của ta |
-| B3 | Đưa kernel tới init qua **UART console** (`earlycon`) + chỉnh offset CCU/pinctrl; vượt **watchdog** vendor (cú reset ngoài ~2s, chẩn đoán = watchdog layout A523 có key) ([re/bringup-signals.md](re/bringup-signals.md)) | Gate #0 qua; **✅ UART đọc được** (cụm 3 pad cạnh LED = PH0 115200, CP2102, đã bắt full log boot stock; xem [re/uart.md](re/uart.md)); kế = flash kernel earlycon đọc xem nó hang/reset ở đâu |
+| B3 | Đưa kernel tới init qua **UART console** (`earlycon`) + chỉnh offset CCU/pinctrl; vượt **watchdog** vendor (cú reset ngoài ~2s, chẩn đoán = watchdog layout A523 có key) ([re/bringup-signals.md](re/bringup-signals.md)) | Gate #0 qua; **✅ UART đọc được** (cụm 3 pad cạnh LED = PH0 115200, CP2102; xem [re/uart.md](re/uart.md)); **✅ kernel mainline 6.16.7 của mình BOOT** - earlycon xác nhận UART base `0x02600000`, chạy tới **PSCI v1.1 + arch_timer 24 MHz**, rồi tắt log ở chỗ bàn giao earlycon->console (sửa bằng `keep_bootcon`); kế = đọc tiếp qua chỗ đó tới các probe CCU/driver |
 | B4 | Vòng bring-up driver (display, keystone, Wi-Fi) từ map B1 | Chưa bắt đầu |
 | Track A | LineageOS GSI (fallback hoãn) | Chưa bắt đầu |
 
@@ -228,8 +228,8 @@ Tất cả compile + build được; chưa boot (xem dưới).
 ## 8. Thách thức đã biết
 
 - **Gate #0, handoff boot.** Kernel gốc AArch32, vào AArch64 trên SoC này chưa giải, nên build 32-bit. **Đã qua trên phần cứng (2026-10-28):** U-Boot vào kernel 32-bit của ta.
-- **Offset register CCU / pinctrl.** Dựa thế hệ A523 + cây clock đọc trực tiếp; offset là giả thuyết tới khi boot xác nhận. Bring-up B3 giảm rủi ro chỗ này (beacon không phụ thuộc CCU, và CCU đăng ký không `CLK_IS_CRITICAL`).
-- **UART console giờ đọc được (2026-11-06).** **Cụm 3 pad cạnh `LED`/đầu nối nguồn** (TX = pad giữa) là UART0 **PH0, 115200**, đọc bằng **CP2102**; đã bắt full log boot stock, kernel mình sẽ dùng `earlycon` (bỏ các checkpoint beacon GPIO). Pinout + ảnh: [re/uart.md](re/uart.md). `sunxi-fel` vẫn không hỗ trợ `0x1911` nên loader vẫn là PhoenixSuit over FEL.
+- **Offset register CCU / pinctrl.** Dựa thế hệ A523 + cây clock đọc trực tiếp; offset là giả thuyết tới khi boot xác nhận. Xác nhận một phần 2026-11-06: earlycon của kernel mình chạy tới PSCI + arch_timer, nên đường clock sớm đủ tốt để tới đó; offset CCU từng driver vẫn được kiểm khi mỗi driver probe.
+- **UART console giờ đọc được (2026-11-06).** **Cụm 3 pad cạnh `LED`/đầu nối nguồn** (TX = pad giữa) là UART0 **PH0, 115200**, đọc bằng **CP2102**; đã bắt full log boot stock, rồi flash chính kernel mainline **6.16.7** của mình vào `boot_a` và đọc trực tiếp - `earlycon` xác nhận base `0x02600000` và nó boot tới chỗ bàn giao console (xem [re/uart.md](re/uart.md) + [re/h726-kernel-earlycon-boot.txt](re/h726-kernel-earlycon-boot.txt)). Bỏ các checkpoint beacon GPIO. `sunxi-fel` vẫn không hỗ trợ `0x1911` nên loader vẫn là PhoenixSuit over FEL.
 - **Stack display.** `vs-display`, `tvtop`, keystone và panel là việc driver lớn còn lại; đã dịch ngược ở [re/](re/) nhưng chưa viết thành driver mainline.
 
 ## 9. Tài liệu

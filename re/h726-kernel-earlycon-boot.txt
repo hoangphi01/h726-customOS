@@ -1,0 +1,70 @@
+NOTICE:  [SCP] :sunxi-arisc driver is starting
+[    0.000000] Booting Linux on physical CPU 0x0
+[    0.000000] Linux version 6.16.7 (root@builder) (arm-linux-gnueabihf-gcc (Ubuntu 15.2.0-16ubuntu1) 15.2.0, GNU ld (GNU Binutils for Ubuntu) 2.46) #20 SMP Mon Nov  2 21:53:19 CET 2026
+[    0.000000] CPU: ARMv7 Processor [410fd034] revision 4 (ARMv7), cr=10c5383d
+[    0.000000] CPU: div instructions available: patching division code
+[    0.000000] CPU: PIPT / VIPT nonaliasing data cache, VIPT aliasing instruction cache
+[    0.000000] OF: fdt: Machine model: Magcubic HY300 Ultra Projector (bring-up)
+[    0.000000] earlycon: uart8250 at MMIO32 0x02600000 (options '')
+[    0.000000] printk: legacy bootconsole [uart8250] enabled
+[    0.000000] Memory policy: Data cache writealloc
+[    0.000000] efi: UEFI not found.
+[    0.000000] cma: Reserved 64 MiB at 0x7c000000
+[    0.000000] Zone ranges:
+[    0.000000]   DMA      [mem 0x0000000040000000-0x000000006fffffff]
+[    0.000000]   Normal   empty
+[    0.000000]   HighMem  [mem 0x0000000070000000-0x000000007fffffff]
+[    0.000000] Movable zone start for each node
+[    0.000000] Early memory node ranges
+[    0.000000]   node   0: [mem 0x0000000040000000-0x0000000047ffffff]
+[    0.000000]   node   0: [mem 0x0000000048000000-0x00000000480fffff]
+[    0.000000]   node   0: [mem 0x0000000048100000-0x000000007fffffff]
+[    0.000000] Initmem setup node 0 [mem 0x0000000040000000-0x000000007fffffff]
+[    0.000000] OF: reserved mem: 0x48000000..0x480fffff (1024 KiB) nomap non-reusable bl31@48000000
+[    0.000000] ------------[ cut here ]------------
+[    0.000000] WARNING: CPU: 0 PID: 0 at arch/arm/kernel/devtree.c:129 arm_dt_init_cpu_maps+0x164/0x244
+[    0.000000] DT /cpu 2 nodes greater than max cores 1, capping them
+[    0.000000] Modules linked in:
+[    0.000000] CPU: 0 UID: 0 PID: 0 Comm: swapper Not tainted 6.16.7 #20 NONE 
+[    0.000000] Hardware name: Generic DT based system
+[    0.000000] Call trace: 
+[    0.000000]  unwind_backtrace from show_stack+0x10/0x14
+[    0.000000]  show_stack from dump_stack_lvl+0x54/0x68
+[    0.000000]  dump_stack_lvl from __warn+0x80/0x124
+[    0.000000]  __warn from warn_slowpath_fmt+0x124/0x194
+[    0.000000]  warn_slowpath_fmt from arm_dt_init_cpu_maps+0x164/0x244
+[    0.000000]  arm_dt_init_cpu_maps from setup_arch+0x424/0x804
+[    0.000000]  setup_arch from start_kernel+0x68/0x684
+[    0.000000]  start_kernel from 0x0
+[    0.000000] ---[ end trace 0000000000000000 ]---
+[    0.000000] psci: probing for conduit method from DT.
+[    0.000000] psci: PSCIv1.1 detected in firmware.
+[    0.000000] psci: Using standard PSCI v0.2 function IDs
+[    0.000000] psci: Trusted OS migration not required
+[    0.000000] psci: SMC Calling Convention v1.2
+[    0.000000] percpu: Embedded 17 pages/cpu s40268 r8192 d21172 u69632
+[    0.000000] pcpu-alloc: s40268 r8192 d21172 u69632 alloc=17*4096
+[    0.000000] pcpu-alloc: [0] 0 
+[    0.000000] Kernel command line: earlycon=uart8250,mmio32,0x02600000 nr_cpus=1 loglevel=8
+[    0.000000] printk: log buffer data + meta data: 131072 + 409600 = 540672 bytes
+[    0.000000] Dentry cache hash table entries: 131072 (order: 7, 524288 bytes, linear)
+[    0.000000] Inode-cache hash table entries: 65536 (order: 6, 262144 bytes, linear)
+[    0.000000] Built 1 zonelists, mobility grouping on.  Total pages: 262144
+[    0.000000] mem auto-init: stack:all(zero), heap alloc:off, heap free:off
+[    0.000000] SLUB: HWalign=64, Order=0-3, MinObjects=0, CPUs=1, Nodes=1
+[    0.000000] rcu: Hierarchical RCU implementation.
+[    0.000000] rcu: 	RCU event tracing is enabled.
+[    0.000000] rcu: 	RCU restricting CPUs from NR_CPUS=16 to nr_cpu_ids=1.
+[    0.000000] 	Tracing variant of Tasks RCU enabled.
+[    0.000000] rcu: RCU calculated value of scheduler-enlistment delay is 10 jiffies.
+[    0.000000] rcu: Adjusting geometry for rcu_fanout_leaf=16, nr_cpu_ids=1
+[    0.000000] RCU Tasks Trace: Setting shift to 0 and lim to 1 rcu_task_cb_adjust=1 rcu_task_cpu_ids=1.
+[    0.000000] NR_IRQS: 16, nr_irqs: 16, preallocated irqs: 16
+[    0.000000] rcu: srcu_init: Setting srcu_struct sizes based on contention.
+[    0.000000] arch_timer: cp15 timer(s) running at 24.00MHz (virt).
+[    0.000000] clocksource: arch_sys_counter: mask: 0xffffffffffffff max_cycles: 0x588fe9dc0, max_idle_ns: 440795202592 ns
+[    0.000001] sched_clock: 56 bits at 24MHz, resolution 41ns, wraps every 4398046511097ns
+[    0.008180] Switching to timer-based delay loop, resolution 41ns
+[    0.014587] Console: colour dummy device 80x30
+[    0.019131] printk: legacy console [tty0] enabled
+[    0.023952] printk: legacy bootconsole [uart8250] disabled

@@ -122,7 +122,12 @@ else
 			--enable CONFIG_SERIAL_8250_DW \
 			--enable CONFIG_SERIAL_EARLYCON \
 			--enable CONFIG_SERIAL_OF_PLATFORM
-		./scripts/config --set-str CONFIG_CMDLINE "earlycon=uart8250,mmio32,0x02600000 nr_cpus=1 loglevel=8"
+		# keep_bootcon stops the kernel disabling the earlycon at the
+		# console handover: the first UART read of our kernel went dark
+		# right after "legacy bootconsole [uart8250] disabled" while the
+		# kernel kept running (its only real console was the tty0 dummy).
+		# ignore_loglevel prints everything regardless of loglevel.
+		./scripts/config --set-str CONFIG_CMDLINE "earlycon=uart8250,mmio32,0x02600000 keep_bootcon ignore_loglevel nr_cpus=1 loglevel=8"
 	fi
 fi
 make olddefconfig

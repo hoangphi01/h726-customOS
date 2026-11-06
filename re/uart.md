@@ -78,6 +78,24 @@ The reference log maps a healthy boot and pins down several facts (see
 - `Booting Linux ... Linux version 5.15.167 ... CPU: ARMv7 Processor [410fd034]` - the stock kernel also
   uses `earlycon` on this same UART, confirming our earlycon path works.
 
-This log is the reference to compare our own kernel against: flash the earlycon `zImage` to `boot_b`
-(A/B one-shot) and the console shows exactly how far mainline gets before it hangs or resets, instead
-of guessing from the H713 sibling.
+This log is the reference to compare our own kernel against.
+
+## What our own mainline kernel shows (2026-11-06)
+
+The earlycon `boot_hb.img` (our mainline **6.16.7**, 32-bit) was flashed to the active `boot_a` and read
+live. **Our kernel runs** - and the earlycon output confirms the UART base from our own kernel, not borrowed
+(see [h726-kernel-earlycon-boot.txt](h726-kernel-earlycon-boot.txt)):
+
+- `Linux version 6.16.7 ... CPU: ARMv7 Processor [410fd034]`, `Machine model: Magcubic HY300 Ultra
+  Projector (bring-up)` - our kernel + our DTS.
+- **`earlycon: uart8250 at MMIO32 0x02600000`** - the base `0x02600000` is confirmed correct by our own kernel.
+- Reaches `psci: PSCIv1.1 detected`, `arch_timer ... 24.00MHz`, cmdline parse, RCU/clocksource init.
+- Then `Console: colour dummy device` / `legacy console [tty0] enabled` / **`legacy bootconsole [uart8250]
+  disabled`** - and the log goes dark.
+
+The silence is **not a crash**: at the earlycon->console handover the kernel disables the earlycon
+bootconsole, and its only registered real console is the `tty0` dummy (no serial console claimed), so it
+keeps running but stops printing to the UART. Fix: add **`keep_bootcon ignore_loglevel`** to the kernel
+cmdline (done in [../kernel/build.sh](../kernel/build.sh)) so the earlycon is never dropped; the next flash
+reads straight past the handover. (Harmless warning in the log: `DT /cpu 2 nodes greater than max cores 1`,
+from `nr_cpus=1` against the 2-CPU DT.)
