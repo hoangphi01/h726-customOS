@@ -24,7 +24,8 @@ All the vendor display drivers are loadable modules, not built into `vmlinux`; t
 
 | Note | Role |
 |---|---|
-| [uart.md](uart.md) | **the UART debug console (SOLVED 2026-11-06)**: pad location + photo ([h726-uart-pads.png](h726-uart-pads.png)), pinout (UART0 PH0, `0x02600000`, 115200 8N1), wiring, how to read it (CP2102 via usbipd->WSL / PuTTY), and the captured stock boot log ([h726-stock-uart-boot.txt](h726-stock-uart-boot.txt)). This is the primary bring-up instrument now. |
+| [uart.md](uart.md) | **the UART debug console (SOLVED 2026-11-06)**: pad location + photo ([h726-uart-pads.png](h726-uart-pads.png)), pinout (UART0 PH0, `0x02600000`, 115200 8N1), wiring, how to read it (CP2102 via usbipd->WSL / PuTTY), the captured stock boot log ([h726-stock-uart-boot.txt](h726-stock-uart-boot.txt)), and our own kernel's earlycon ([h726-kernel-earlycon-boot.txt](h726-kernel-earlycon-boot.txt)). This is the primary bring-up instrument now. |
+| [uboot-console.md](uboot-console.md) | **the bidirectional UART -> U-Boot console loop**: add a TX wire and drive stock U-Boot to `bootm` a test kernel from RAM, leaving `boot_a` stock (no FEL, no `/data` wipe). Covers the wiring, the Allwinner command set (`sunxi_flash read`, `bootm`-only), why `bootm` of the split Android image crashes, and the uImage fix. |
 | [ccu-sun50iw15.md](ccu-sun50iw15.md) | the clock tree read live off the device (the CCU driver's source of truth) |
 | [bringup-signals.md](bringup-signals.md) | the blind (no-UART) bring-up signal hunt and its conclusion - **now superseded by the UART** (see uart.md), kept as history + the watchdog diagnosis. Which output channels exist as a boot beacon: the focus motor (dead - manual focus), `/sys/class/prj` (reboots on read), backlight PWM, the fan (proven but thermal). Includes the vendor stepper-motor interface (`motor_ctr`). |
 

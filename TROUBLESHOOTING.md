@@ -37,6 +37,24 @@ Allwinner IMAGEWTY images carry a per-partition **verify file** `V<name>.fex` (1
 - `sunxi-fel` does **not** support `0x1911` (it reports `soc=00001911(unknown)`; `sunxi-fel uboot` fails `Unexpected SCTLR`). The working loader is **PhoenixSuit over FEL**, which uses the stock `fes1.fex` from the firmware to init DRAM.
 - A failed/partial flash does **not** brick the device: if the boot chain is broken the BootROM drops into FEL on its own (`1f3a:efe8`), always recoverable. (Our case was different - the boot chain was intact and only the kernel hung, so it did not auto-FEL; hence the paperclip button.)
 
+## Prefer the U-Boot console loop over flashing `boot_a` (avoids FEL + `/data` wipe)
+
+Once a **TX wire** is added to the UART (adapter TXD -> board RX, the top pad of the 3-pad cluster), the
+stock U-Boot `=>` prompt becomes an interactive loader: stage a test kernel on `boot_b`, drop to `=>`, and
+`bootm` it while **`boot_a` stays stock** - so a kernel hang costs only a power-cycle, never a FEL or a
+`/data` wipe. Full procedure in [re/uboot-console.md](re/uboot-console.md). Key gotchas:
+
+- **`bootm` of an Android boot image alone crashes** (`vendor magic err` -> eMMC faults -> U-Boot
+  **prefetch abort**). The stock image is Android **v3/v4 split**: kernel in `boot`, ramdisk+DTB in
+  `vendor_boot`. A bare `bootm` cannot assemble it. **Fix:** wrap the kernel as a self-contained legacy
+  **uImage** (`mkimage -A arm -O linux -T kernel -C none -a 0x40008000 -e 0x40008000 -d zImage-dtb uImage`)
+  and `bootm` that - it needs no `vendor_boot`. (This U-Boot has `bootm` only, no `bootz`/`booti`.)
+- **"boot_b never comes up" = U-Boot drops to `=>`**, not a dead kernel: `env_b` fails CRC -> default env ->
+  `distro_bootcmd` undefined -> autoboot aborts. Useful, not broken: that `=>` is where you `bootm`.
+- Storage in this U-Boot is **`sunxi_flash read <addr> <part>`**, not `mmc` (`mmc list` says none).
+- If `bootm` crashes U-Boot (prefetch/data abort), the `=>` stops responding - **power-cycle** to recover
+  (misc one-shot tries=0 -> stock `boot_a`).
+
 ## adb path mangling on Windows (git-bash)
 
 git-bash rewrites remote adb paths (e.g. `/data/local/tmp/...` becomes `C:/Program Files/Git/data/...`), so `adb push`/`adb pull`/`adb shell 'dd ...'` with a `/data` path fails or lands in the wrong place. Run adb from **PowerShell** (no path rewriting), or set `MSYS_NO_PATHCONV=1` (but then Windows local paths must be written `C:\...`).

@@ -99,3 +99,11 @@ keeps running but stops printing to the UART. Fix: add **`keep_bootcon ignore_lo
 cmdline (done in [../kernel/build.sh](../kernel/build.sh)) so the earlycon is never dropped; the next flash
 reads straight past the handover. (Harmless warning in the log: `DT /cpu 2 nodes greater than max cores 1`,
 from `nr_cpus=1` against the 2-CPU DT.)
+
+## Driving U-Boot (bidirectional)
+
+Add a third wire - **adapter TXD -> board RX (the top pad of the 3-pad cluster)** - and the same CP2102
+becomes an interactive U-Boot console. That unlocks a `/data`-safe test loop (load a test kernel into RAM
+and `bootm` it, leaving stock `boot_a` untouched - no FEL, no `/data` wipe). The wiring, level safety, the
+U-Boot command set (`sunxi_flash read`, `bootm`-only), and the full loop are in
+[uboot-console.md](uboot-console.md).
