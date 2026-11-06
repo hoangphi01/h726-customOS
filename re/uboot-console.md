@@ -5,9 +5,11 @@ test kernel into RAM and `bootm` it **without ever overwriting the stock `boot_a
 sustainable alternative to flashing `boot_a` (which, on a kernel hang, costs a FEL + PhoenixSuit
 recovery and wipes `/data`; see [../TROUBLESHOOTING.md](../TROUBLESHOOTING.md)).
 
-Status (2026-11-06): the console is **working** (TX confirmed, commands execute). The clean boot path
-(uImage + `bootm`) is staged and being verified; the direct-`bootm`-of-the-Android-image path was
-tried and **fails** (see "Why `bootm` of the boot image crashes" below).
+Status (2026-11-06): the console is **working** (TX confirmed, commands execute). But `bootm` here is
+**Android-only** and faults on eMMC in the slot-b default-env state, so neither the bare boot image nor a
+uImage can be `bootm`-ed from `=>` (both tried, both crash U-Boot; see below). The working path to *run* a
+test kernel is to **clone slot a to slot b** and let the stock flow boot it (see "The fix" below); the
+`=>` console remains useful for inspection.
 
 ## Wiring (bidirectional, add TX to the read-only setup)
 
@@ -78,37 +80,45 @@ It errors on the missing vendor magic, tries to pull `vendor_boot` off eMMC, the
 and U-Boot aborts. (Flashing the same image to `boot_a` boots fine only because the *stock* `env_a` boot
 flow loads `vendor_boot_a` too.)
 
-**The fix: wrap the kernel as a self-contained legacy uImage** so `bootm` needs nothing else. Our kernel
-carries its own DTB (`CONFIG_ARM_APPENDED_DTB`) and ignores the ramdisk at this stage, so a plain kernel
-uImage is enough:
+### uImage via `bootm` does NOT work here (tried 2026-11-06)
+
+Wrapping `zImage-dtb` as a legacy uImage (`mkimage -A arm -O linux -T kernel -C none -a/-e 0x40008000`),
+`dd`-ing it to `boot_b`, and `sunxi_flash read 0x50000000 boot_b; bootm 0x50000000` gives the **same crash**
+(`vendor magic err` -> eMMC faults -> prefetch abort). This Allwinner `bootm` is **customised to boot only
+Android images**: it ignores the legacy uImage magic at the given address and always runs its android path
+(load `vendor_boot`, do its own mmc init). In the slot-b default-env state that mmc init faults. So neither
+a raw zImage, a uImage, nor the bare boot image can be `bootm`-ed from this `=>` state. (There is also no
+`bootz`/`booti`/`go`-with-cache-control to fall back to.)
+
+### The fix that uses the proven path: clone slot a to slot b
+
+Our kernel is known to boot via the **stock slot-a android flow** (it booted when `boot_hb.img` was flashed
+to `boot_a`). So make **slot b an exact clone of slot a**, but with our kernel in `boot_b`. Then slot b
+boots our kernel through the identical, working flow - no `=>` interaction, and reading needs only **RX**
+(drop the TX wire):
 
 ```
-# on the build host (u-boot-tools):
-mkimage -A arm -O linux -T kernel -C none -a 0x40008000 -e 0x40008000 \
-        -n h726bringup -d zImage-dtb uImage
-```
+# (Android, adb+su) clone the slot-a boot chain to slot b, leave boot_a stock:
+su -c 'dd if=/dev/block/by-name/env_a         of=/dev/block/by-name/env_b'
+su -c 'dd if=/dev/block/by-name/vendor_boot_a of=/dev/block/by-name/vendor_boot_b'
+su -c 'dd if=/dev/block/by-name/init_boot_a   of=/dev/block/by-name/init_boot_b'
+su -c 'dd if=/dev/block/by-name/vbmeta_a      of=/dev/block/by-name/vbmeta_b'
+su -c 'dd if=/dev/block/by-name/dtbo_a        of=/dev/block/by-name/dtbo_b'
+# our kernel (Android image with keep_bootcon kernel) into boot_b:
+su -c 'dd if=/data/local/tmp/boot_hb.img      of=/dev/block/by-name/boot_b'
+#   ... arm the misc one-shot for slot b (misc_bc.bin) ...
+adb reboot                      # slot b now boots our kernel via the stock flow
 
-`-C none` because the payload (`zImage-dtb`) self-decompresses; `-a/-e 0x40008000` is the standard ARM
-zImage load/exec (DRAM base + 0x8000; the kernel decompresses upward, clear of BL31 at `0x48000000`).
-
-## The loop
-
-```
-# (Android, adb+su) stage the test kernel on slot b, leave boot_a stock:
-adb push uImage /data/local/tmp/uImage
-su -c 'dd if=/data/local/tmp/uImage of=/dev/block/by-name/boot_b'
-#   ... arm the misc one-shot for slot b (see stage_b flow) ...
-adb reboot                      # U-Boot tries slot b -> drops to =>
-
-# (U-Boot =>, over UART TX)
-sunxi_flash read 0x50000000 boot_b
-bootm 0x50000000                # boots our kernel; earlycon + keep_bootcon print the whole way
-
+# read the UART (RX only) for the earlycon + keep_bootcon output.
 # hang? power-cycle -> stock boot_a (tries=0). No FEL, no /data wipe.
 ```
 
-Each iteration: rebuild -> `mkimage` -> `dd` to `boot_b` -> reboot to `=>` -> `sunxi_flash read` + `bootm`
--> read the UART. `boot_a` stays stock, so adb and `/data` always survive.
+`env_b` must be a valid copy (its bad CRC was what dropped slot b to `=>`); `vendor_boot_b`/`init_boot_b`
+give `bootm` the ramdisk it demands; `vbmeta_b` carries the same verity-disabled (orange) state that let
+our modified kernel boot on slot a. `boot_a`, `/data` and the calibration are never touched.
+
+The interactive `=>` console (above) is still the tool for one-off U-Boot inspection (`printenv`,
+`sunxi_flash`, memory peeks); the slot-clone is the hands-off way to actually *run* a test kernel.
 
 See [uart.md](uart.md) for the read-only pad/pinout, [../STATUS.md](../STATUS.md) for state, and
 [../TROUBLESHOOTING.md](../TROUBLESHOOTING.md) for FEL recovery.
