@@ -57,6 +57,13 @@
 #define CLK_BUS_VE		60
 #define CLK_VE			61
 
-#define CLK_NUMBER		64
+/*
+ * Must equal the allocated size of sun50iw15_hw_clks.hws[], i.e. the highest
+ * populated index + 1 (CLK_VE = 61). sunxi_ccu_probe() iterates hws[0..num-1];
+ * a num larger than the array reads past it and dereferences garbage (seen as a
+ * NULL-pointer oops in sunxi_ccu_probe -> __clk_register at bring-up). Bump this
+ * in lockstep with the highest index added to hws[].
+ */
+#define CLK_NUMBER		62
 
 #endif /* _DT_BINDINGS_CLOCK_SUN50IW15_CCU_H_ */

@@ -8,6 +8,7 @@ The map of this repo's documentation: what each file is for, and when to update 
 |---|---|---|
 | **[README.md](README.md)** | The front door. What/why/goals, the two tracks, and a **Progress table** (EN + VI). | Every milestone: keep the Progress table and the status badge current. Keep EN and VI in sync. |
 | **[STATUS.md](STATUS.md)** | The **living current state**. The `Phase:` line, "What is working", and "Next" are the truth of where we are. | **Every working session that changes reality.** This is the one that drifts first; see the rule below. |
+| **[DIARY.md](DIARY.md)** | The **journey as a journal**: dated entries, each milestone and obstacle in order. The story behind STATUS; narrative, not current-state. | Append a dated entry at a real milestone or hard-won lesson. Never rewrite past entries (it is a log). |
 | **[PLAN.md](PLAN.md)** | The **roadmap**: tracks, phases, approach, open questions. The intended path, not the current position. | When the direction changes (a track reprioritised, a phase reshaped, a fork decided). Not for day-to-day progress. |
 | **[RULE.md](RULE.md)** | How this project is run and written (commit rules, no redistribution, tone, redaction). | Rarely, when a working rule changes. |
 | **[DOCS_GUIDE.md](DOCS_GUIDE.md)** | This file: the doc index and update discipline. | When a document is added, removed, or repurposed. |

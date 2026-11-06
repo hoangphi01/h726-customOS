@@ -49,7 +49,7 @@ Track B (a from-source kernel) is the primary focus; Track A (a LineageOS GSI) i
 | B1 | Reverse-engineer the display + keystone drivers into register maps ([re/](re/)) | Done, 9 notes |
 | B2 | Buildable kernel base: board device tree, `defconfig`, build scripts, and real sun50iw15 **CCU + pinctrl** drivers ([kernel/](kernel/)) | Done, compiles into the kernel |
 | Gate #0 | Boot handoff: the stock chain is AArch32, so the kernel is built **32-bit** (`ARCH=arm`) to match it; confirmed by a GPIO heartbeat in the `zImage` running on the device ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | **PASSED** - U-Boot enters our 32-bit kernel |
-| B3 | Walk the kernel to init over the **UART console** (`earlycon`) and fix the CCU/pinctrl offsets; get past the vendor **watchdog** (an external ~2 s reset, diagnosed as the sun55i-A523 key-protected watchdog) ([re/bringup-signals.md](re/bringup-signals.md)) | Gate #0 passed; **✅ UART console reads** (LED-connector 3-pad = PH0 115200, CP2102; see [re/uart.md](re/uart.md)); **✅ our mainline 6.16.7 boots** - earlycon confirms UART base `0x02600000`, reaches **PSCI v1.1 + arch_timer 24 MHz**, then goes dark at the earlycon->console handover (fixed with `keep_bootcon`); next = read past it to the CCU/driver probes |
+| B3 | Walk the kernel to init over the **UART console** (`earlycon`) and fix the CCU/pinctrl offsets; get past the vendor **watchdog** (an external ~2 s reset, diagnosed as the sun55i-A523 key-protected watchdog) ([re/bringup-signals.md](re/bringup-signals.md)) | **✅✅ DONE - mainline 6.16.7 boots fully on hardware.** Gate #0 passed; UART console reads ([re/uart.md](re/uart.md)); the `keep_bootcon` log found a CCU bug (`CLK_NUMBER` 64 vs 62-entry array -> `sunxi_ccu_probe` NULL deref), fixed; kernel now runs every subsystem to `clk: Disabling unused clocks` and `kernel_init`, panicking only at `VFS: Unable to mount root fs` (no rootfs yet) ([re/h726-kernel-fullboot.txt](re/h726-kernel-fullboot.txt)). No watchdog reset seen. Next = pinctrl `-2` + eMMC/initramfs for a root device |
 | B4 | Driver bring-up loop (display, keystone, Wi-Fi) from the B1 maps | Not started |
 | Track A | LineageOS GSI (deferred fallback) | Not started |
 
@@ -110,6 +110,7 @@ Everything compiles and builds; nothing boots yet (see below).
 ## 9. Documentation
 
 - **[STATUS.md](STATUS.md)** the living current state (what works, what is next).
+- **[DIARY.md](DIARY.md)** the journey as a journal: each milestone and obstacle, in order.
 - **[PLAN.md](PLAN.md)** the roadmap, tracks and phases.
 - **[RULE.md](RULE.md)** how the project is run and written.
 - **[DOCS_GUIDE.md](DOCS_GUIDE.md)** the documentation index and update discipline.
@@ -174,7 +175,7 @@ Track B (kernel từ source) là trọng tâm; Track A (LineageOS GSI) là fallb
 | B1 | Dịch ngược driver display + keystone thành register map ([re/](re/)) | Xong, 9 note |
 | B2 | Nền kernel build-được: device tree, `defconfig`, build script, và driver **CCU + pinctrl** sun50iw15 thật ([kernel/](kernel/)) | Xong, compile vào kernel |
 | Gate #0 | Handoff boot: chuỗi stock là AArch32, nên build kernel **32-bit** (`ARCH=arm`) cho khớp; đã xác nhận bằng heartbeat GPIO trong `zImage` chạy trên máy ([kernel/bringup-strategy.md](kernel/bringup-strategy.md)) | **ĐÃ QUA** - U-Boot vào kernel 32-bit của ta |
-| B3 | Đưa kernel tới init qua **UART console** (`earlycon`) + chỉnh offset CCU/pinctrl; vượt **watchdog** vendor (cú reset ngoài ~2s, chẩn đoán = watchdog layout A523 có key) ([re/bringup-signals.md](re/bringup-signals.md)) | Gate #0 qua; **✅ UART đọc được** (cụm 3 pad cạnh LED = PH0 115200, CP2102; xem [re/uart.md](re/uart.md)); **✅ kernel mainline 6.16.7 của mình BOOT** - earlycon xác nhận UART base `0x02600000`, chạy tới **PSCI v1.1 + arch_timer 24 MHz**, rồi tắt log ở chỗ bàn giao earlycon->console (sửa bằng `keep_bootcon`); kế = đọc tiếp qua chỗ đó tới các probe CCU/driver |
+| B3 | Đưa kernel tới init qua **UART console** (`earlycon`) + chỉnh offset CCU/pinctrl; vượt **watchdog** vendor (cú reset ngoài ~2s, chẩn đoán = watchdog layout A523 có key) ([re/bringup-signals.md](re/bringup-signals.md)) | **✅✅ XONG - mainline 6.16.7 boot đầy đủ trên máy.** Gate #0 qua; UART console đọc được ([re/uart.md](re/uart.md)); log `keep_bootcon` lòi ra bug CCU (`CLK_NUMBER` 64 vs mảng 62 phần tử -> `sunxi_ccu_probe` deref NULL), đã sửa; kernel giờ chạy hết mọi subsystem tới `clk: Disabling unused clocks` + `kernel_init`, chỉ panic ở `VFS: Unable to mount root fs` (chưa có rootfs) ([re/h726-kernel-fullboot.txt](re/h726-kernel-fullboot.txt)). Không thấy watchdog reset. Kế = pinctrl `-2` + eMMC/initramfs cho root device |
 | B4 | Vòng bring-up driver (display, keystone, Wi-Fi) từ map B1 | Chưa bắt đầu |
 | Track A | LineageOS GSI (fallback hoãn) | Chưa bắt đầu |
 
@@ -235,6 +236,7 @@ Tất cả compile + build được; chưa boot (xem dưới).
 ## 9. Tài liệu
 
 - **[STATUS.md](STATUS.md)** trạng thái sống (cái gì chạy, cái gì kế).
+- **[DIARY.md](DIARY.md)** nhật ký hành trình: từng cột mốc và chướng ngại, theo thứ tự thời gian.
 - **[PLAN.md](PLAN.md)** lộ trình, track và phase.
 - **[RULE.md](RULE.md)** cách vận hành và viết.
 - **[DOCS_GUIDE.md](DOCS_GUIDE.md)** chỉ mục tài liệu và kỷ luật cập nhật.
