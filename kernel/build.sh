@@ -122,12 +122,23 @@ else
 			--enable CONFIG_SERIAL_8250_DW \
 			--enable CONFIG_SERIAL_EARLYCON \
 			--enable CONFIG_SERIAL_OF_PLATFORM
+		# Interactive bring-up shell: embed a busybox initramfs so the kernel
+		# has an init to run (there is no eMMC rootfs yet, which is why a plain
+		# build panics at "VFS: Unable to mount root fs"). devtmpfs gives
+		# /dev/console before init. The rootfs dir (busybox + /init) is built at
+		# $INITRAMFS before this runs; default /root/initramfs.
+		./scripts/config --enable CONFIG_BLK_DEV_INITRD \
+			--enable CONFIG_DEVTMPFS \
+			--enable CONFIG_DEVTMPFS_MOUNT \
+			--set-str CONFIG_INITRAMFS_SOURCE "${INITRAMFS:-/root/initramfs}"
 		# keep_bootcon stops the kernel disabling the earlycon at the
 		# console handover: the first UART read of our kernel went dark
 		# right after "legacy bootconsole [uart8250] disabled" while the
 		# kernel kept running (its only real console was the tty0 dummy).
 		# ignore_loglevel prints everything regardless of loglevel.
-		./scripts/config --set-str CONFIG_CMDLINE "earlycon=uart8250,mmio32,0x02600000 keep_bootcon ignore_loglevel nr_cpus=1 loglevel=8"
+		# console=ttyS0 makes the real 8250 serial the interactive console (for
+		# the initramfs shell); earlycon + keep_bootcon keep the early log too.
+		./scripts/config --set-str CONFIG_CMDLINE "earlycon=uart8250,mmio32,0x02600000 console=ttyS0,115200 keep_bootcon ignore_loglevel nr_cpus=1 loglevel=8"
 	fi
 fi
 make olddefconfig

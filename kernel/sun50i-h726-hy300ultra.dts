@@ -186,7 +186,15 @@
 			compatible = "allwinner,sun50iw15-pinctrl";
 			reg = <0x02000000 0x800>;
 			interrupts = <0 0x33 4>, <0 0x35 4>, <0 0x36 4>;
-			clocks = <&ccu 5>, <&osc24M>, <&osc32k>;
+			/*
+			 * Bring-up: the PIO bus (apb) clock is not implemented in our
+			 * minimal CCU yet (index 5 was a NULL gap -> pinctrl probe
+			 * failed -2). U-Boot already clocks the PIO, so use osc24M as a
+			 * valid placeholder for "apb" (clk_prepare_enable is a no-op on
+			 * a fixed-clock). Replace with the real APB bus clock once the
+			 * CCU bus/mux tree is implemented.
+			 */
+			clocks = <&osc24M>, <&osc24M>, <&osc32k>;
 			clock-names = "apb", "hosc", "losc";
 			gpio-controller;
 			#gpio-cells = <3>;
@@ -221,10 +229,16 @@
 			interrupts = <0 0 4>;
 			reg-shift = <2>;
 			reg-io-width = <4>;
-			clocks = <&ccu 90>;
-			resets = <&ccu 20>;
-			pinctrl-names = "default";
-			pinctrl-0 = <&uart0_pins>;
+			/*
+			 * Bring-up: the UART0 module clock is CCU index 90 (vendor
+			 * numbering), not implemented in our minimal CCU yet, so use a
+			 * fixed clock-frequency instead. apb-uart sits in the 24 MHz
+			 * domain (re/ccu-sun50iw15.md), so uartclk = 24 MHz; the 8250
+			 * driver then programs 115200 directly. clocks/resets and the
+			 * pinctrl handle are dropped so ttyS0 does not depend on the CCU
+			 * or the pinctrl probe (U-Boot already clocks and muxes UART0).
+			 */
+			clock-frequency = <24000000>;
 			status = "okay";
 		};
 

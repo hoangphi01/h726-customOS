@@ -1,0 +1,19 @@
+#!/bin/busybox sh
+# Minimal bring-up init for the HY300 Ultra mainline kernel.
+# Shebang points at /bin/busybox directly: at exec time the applet symlinks
+# (/bin/sh etc.) do not exist yet, so "#!/bin/sh" would fail with ENOENT (-2).
+export PATH=/bin:/sbin:/usr/bin:/usr/sbin
+/bin/busybox mount -t proc proc /proc
+/bin/busybox mount -t sysfs sysfs /sys
+/bin/busybox mount -t devtmpfs devtmpfs /dev 2>/dev/null
+/bin/busybox --install -s /bin
+echo
+echo "================================================"
+echo "  HY300 Ultra (Allwinner H726 / sun50iw15)"
+echo "  mainline Linux 6.16.7 - bring-up shell"
+echo "  (first interactive Linux on this SoC)"
+echo "================================================"
+echo
+uname -a
+echo
+exec /bin/busybox sh

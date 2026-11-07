@@ -121,3 +121,36 @@ rootfs - no watchdog reset, no driver crash, just nothing to run as init yet. Fr
 One loose end still open: `2000000.pinctrl` probe fails `-2`, but it is not fatal (earlycon needs no
 pinctrl). Next chapters: fix pinctrl, bring up the eMMC (dw-mmc) or add an initramfs so there is a real
 root device, and get the real `ttyS0` console for an interactive shell.
+
+## 2026-11-07 - An interactive shell
+
+The rootfs-mount panic just meant "no userspace to run". So I gave it one: a static armhf **busybox** in an
+**initramfs** built into the kernel, and a real **ttyS0** console for input (earlycon is output only). The
+UART0 module clock is a CCU index not modelled yet, so the bring-up DTS gives the serial node a fixed
+`clock-frequency = <24000000>` (apb-uart is in the 24 MHz domain) and drops the clock/reset/pinctrl refs -
+U-Boot already clocks and muxes the pins. cmdline gains `console=ttyS0,115200`.
+
+Two small bugs cost a boot each, both read straight off the UART: `/init` with `#!/bin/sh` failed
+`-2` (the `/bin/sh` symlink does not exist yet at exec time - use `#!/bin/busybox sh`), and
+`Warning: unable to open an initial console` (an initramfs needs a *static* `/dev/console` node;
+`DEVTMPFS_MOUNT` does not apply to it). Fixed both, reflashed via the slot-clone loop, and:
+
+```
+================================================
+  HY300 Ultra (Allwinner H726 / sun50iw15)
+  mainline Linux 6.16.7 - bring-up shell
+================================================
+~ # uname -a
+Linux (none) 6.16.7 ... armv7l GNU/Linux
+~ # cat /proc/cpuinfo | head
+model name : ARMv7 Processor rev 4 (v7l)
+Features   : half thumb ... neon ... aes pmull sha1 sha2 crc32 ...
+~ # ls /
+bin  dev  etc  init  proc  sbin  sys
+```
+
+Commands typed over the serial get real responses: **a working interactive mainline Linux shell on the
+H726**, the first on this SoC. Full transcript: [re/h726-kernel-shell.txt](re/h726-kernel-shell.txt); how
+it is built: [kernel/initramfs-shell.md](kernel/initramfs-shell.md). The core bring-up is a real,
+usable Linux now. From here it is drivers: the eMMC (dw-mmc) for a persistent rootfs, then the display
+stack from the `re/` maps.
