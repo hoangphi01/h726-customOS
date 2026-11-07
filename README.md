@@ -9,11 +9,28 @@
 ![SoC](https://img.shields.io/badge/SoC-Allwinner%20H726%20(sun50iw15)-blue)
 ![FEL ID](https://img.shields.io/badge/FEL%20ID-0x1911-informational)
 ![Kernel](https://img.shields.io/badge/kernel-mainline%206.16%20(arm)-green)
-![Status](https://img.shields.io/badge/status-kernel%20bring--up%20(B3)-orange)
+![Status](https://img.shields.io/badge/status-interactive%20shell%20%E2%9C%93-brightgreen)
 ![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)
 ![Affiliation](https://img.shields.io/badge/affiliation-none-lightgrey)
 
+<br>
+
+**Track B · mainline kernel**
+
+`██████████████████░░░░░░░░░░░░`  boot ✓ → shell ✓ · drivers ahead
+
+🟩 **B1** RE drivers · 🟩 **B2** kernel base · 🟩 **#0** kernel runs · 🟩 **B3** full boot + shell · 🟨 **B4** drivers (eMMC → display) · ⬜ **B5** usable OS
+
 </div>
+
+| Phase | What | Status |
+|:--:|---|:--:|
+| **B1** | Reverse-engineer the vendor display/keystone drivers | 🟩 done |
+| **B2** | Kernel base: board DTS, sun50iw15 CCU + pinctrl | 🟩 done |
+| **Gate #0** | 32-bit mainline kernel executes on the H726 | 🟩 done |
+| **B3** | Full boot to `kernel_init` + **interactive busybox shell** over UART | 🟩 done |
+| **B4** | Drivers: eMMC (dw-mmc) → display stack → Wi-Fi | 🟨 in progress |
+| **B5** | A usable, trustworthy Linux OS (media box / kiosk / light desktop) | ⬜ not started |
 
 ---
 
@@ -142,6 +159,25 @@ Experimental. Flashing an Allwinner device can permanently brick it (though FEL 
 ## Tiếng Việt
 
 </div>
+
+<div align="center">
+
+**Track B · kernel mainline**
+
+`██████████████████░░░░░░░░░░░░`  boot ✓ → shell ✓ · còn driver phía trước
+
+🟩 **B1** RE driver · 🟩 **B2** nền kernel · 🟩 **#0** kernel chạy · 🟩 **B3** boot đầy đủ + shell · 🟨 **B4** driver (eMMC → display) · ⬜ **B5** OS dùng được
+
+</div>
+
+| Phase | Việc | Trạng thái |
+|:--:|---|:--:|
+| **B1** | Dịch ngược driver display/keystone của hãng | 🟩 xong |
+| **B2** | Nền kernel: DTS board, CCU + pinctrl sun50iw15 | 🟩 xong |
+| **Gate #0** | Kernel mainline 32-bit chạy trên H726 | 🟩 xong |
+| **B3** | Boot đầy đủ tới `kernel_init` + **shell busybox tương tác** qua UART | 🟩 xong |
+| **B4** | Driver: eMMC (dw-mmc) → display stack → Wi-Fi | 🟨 đang làm |
+| **B5** | Hệ Linux dùng được, tin cậy (media box / kiosk / desktop nhẹ) | ⬜ chưa bắt đầu |
 
 ## 1. Đây là gì
 
