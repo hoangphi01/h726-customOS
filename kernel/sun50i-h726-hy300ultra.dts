@@ -259,12 +259,14 @@
 				     "allwinner,sun50i-a64-emmc";
 			reg = <0x04022000 0x1000>;
 			interrupts = <0 0x29 4>;
-			clocks = <&ccu 19>, <&ccu 83>;
+			/* Our CCU indices (CLK_BUS_SMHC2=53, CLK_SMHC2=50, RST=10); no
+			 * pinctrl (U-Boot muxes the pins). NOTE: the rest of this full
+			 * DTS still uses vendor clock numbering and needs a reconcile
+			 * pass to our CCU before it replaces the bring-up DTS. */
+			clocks = <&ccu 53>, <&ccu 50>;
 			clock-names = "ahb", "mmc";
-			resets = <&ccu 14>;
+			resets = <&ccu 10>;
 			reset-names = "ahb";
-			pinctrl-names = "default";
-			pinctrl-0 = <&mmc2_pins>;
 			max-frequency = <100000000>;
 			cap-mmc-highspeed;
 			mmc-ddr-1_8v;

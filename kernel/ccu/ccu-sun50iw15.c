@@ -108,7 +108,28 @@ static SUNXI_CCU_GATE_DATA(bus_twi0_clk,  "bus-twi0",  osc24M, 0x91c, BIT(0), 0)
 static SUNXI_CCU_GATE_DATA(bus_twi1_clk,  "bus-twi1",  osc24M, 0x91c, BIT(1), 0);
 static SUNXI_CCU_GATE_DATA(smhc0_clk,     "smhc0",     osc24M, 0x830, BIT(31), 0);
 static SUNXI_CCU_GATE_DATA(smhc1_clk,     "smhc1",     osc24M, 0x834, BIT(31), 0);
-static SUNXI_CCU_GATE_DATA(smhc2_clk,     "smhc2",     osc24M, 0x838, BIT(31), 0);
+/*
+ * eMMC (mmc2) module clock. Unlike the other gates here it must be a real
+ * rate-settable clock: the sunxi-mmc driver clk_set_rate()s it to produce the
+ * card clock (400 kHz at init, up to ~50 MHz for HS). Modelled on the A523
+ * mmc2 clock (ccu-sun55i-a523.c) at reg 0x838 - M[0:4], P[8:12], mux[24:26],
+ * gate BIT(31), post-div 2. Parents trimmed to what the minimal CCU has: hosc
+ * for the slow init and pll-peri0 for high speed; add pll-periph0-800M/600M
+ * later for HS200/HS400. The register fields are the A523 hypothesis and are
+ * confirmed/corrected on hardware once the eMMC enumerates over the console.
+ */
+static const struct clk_parent_data mmc2_parents[] = {
+	{ .fw_name = "hosc" },
+	{ .hw = &pll_peri0_clk.common.hw },
+};
+static SUNXI_CCU_MP_MUX_GATE_POSTDIV_DUALDIV(smhc2_clk, "mmc2", mmc2_parents,
+					     0x838,
+					     0, 5,	/* M */
+					     8, 5,	/* P */
+					     24, 3,	/* mux */
+					     BIT(31),	/* gate */
+					     2,		/* post div */
+					     0);
 static SUNXI_CCU_GATE_DATA(bus_smhc0_clk, "bus-smhc0", osc24M, 0x84c, BIT(0), 0);
 static SUNXI_CCU_GATE_DATA(bus_smhc1_clk, "bus-smhc1", osc24M, 0x84c, BIT(1), 0);
 static SUNXI_CCU_GATE_DATA(bus_smhc2_clk, "bus-smhc2", osc24M, 0x84c, BIT(2), 0);

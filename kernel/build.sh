@@ -131,6 +131,12 @@ else
 			--enable CONFIG_DEVTMPFS \
 			--enable CONFIG_DEVTMPFS_MOUNT \
 			--set-str CONFIG_INITRAMFS_SOURCE "${INITRAMFS:-/root/initramfs}"
+		# eMMC (sunxi-mmc) - a persistent rootfs instead of the RAM initramfs.
+		# Needs the rate-settable mmc2 clock in ccu-sun50iw15.c and the
+		# mmc@4022000 node in the bring-up DTS.
+		./scripts/config --enable CONFIG_MMC \
+			--enable CONFIG_MMC_BLOCK \
+			--enable CONFIG_MMC_SUNXI
 		# keep_bootcon stops the kernel disabling the earlycon at the
 		# console handover: the first UART read of our kernel went dark
 		# right after "legacy bootconsole [uart8250] disabled" while the
